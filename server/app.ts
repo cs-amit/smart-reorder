@@ -1,9 +1,9 @@
 import express from 'express';
-import { adminAuth, db } from './firebaseAdmin';
-import * as store from './store';
-import { computePredictions, dayDifference } from './prediction';
-import { extractOrdersFromImage } from './geminiVision';
-import { Order, NudgeRecord } from '../src/types';
+import { adminAuth, db } from './firebaseAdmin.js';
+import * as store from './store.js';
+import { computePredictions, dayDifference } from './prediction.js';
+import { extractOrdersFromImage } from './geminiVision.js';
+import { Order, NudgeRecord } from '../src/types.js';
 
 // ============================================================================
 // Auth middleware: verifies the Firebase ID token on every protected request.

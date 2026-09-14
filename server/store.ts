@@ -1,6 +1,6 @@
-import { db, adminAuth, FieldValue } from './firebaseAdmin';
-import { Distributor, Order, Outlet, Product, Retailer, NudgeRecord } from '../src/types';
-import seedDataRaw from '../src/data/seedData.json';
+import { db, adminAuth, FieldValue } from './firebaseAdmin.js';
+import { Distributor, Order, Outlet, Product, Retailer, NudgeRecord } from '../src/types.js';
+import seedDataRaw from '../src/data/seedData.json' with { type: 'json' };
 
 export const DEMO_DIST_ID = 'usr_dist_demo1';
 export const DEMO_RETAILER_ID = 'usr_ret_demo1';

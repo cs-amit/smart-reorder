@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { Outlet, Product, CandidateOrderLine } from '../src/types';
+import { Outlet, Product, CandidateOrderLine } from '../src/types.js';
 
 let aiClient: GoogleGenAI | null = null;
 

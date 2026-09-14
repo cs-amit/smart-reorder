@@ -1,4 +1,4 @@
-import { ConfidenceTier, Order, Outlet, PredictionResult, Product } from '../src/types';
+import { ConfidenceTier, Order, Outlet, PredictionResult, Product } from '../src/types.js';
 
 /**
  * Calculates the median of an array of numbers.
