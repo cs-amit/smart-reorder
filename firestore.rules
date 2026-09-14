@@ -1,0 +1,183 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Core Authentication Check:
+    // A user must be signed in (request.auth != null) for any read or write.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if an authenticated user has an active retailer profile linked by auth UID
+    function hasRetailerProfile() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/retailers/$(request.auth.uid));
+    }
+
+    // Helper: Retrieve retailer document data for the current authenticated user
+    function getRetailerData() {
+      return get(/databases/$(database)/documents/retailers/$(request.auth.uid)).data;
+    }
+
+    // Helper: Check if user is the retailer linked to a specific outlet
+    function isRetailerForOutlet(outletId) {
+      return hasRetailerProfile() && getRetailerData().outlet_id == outletId;
+    }
+
+    // Helper: Check if user is the retailer linked to a specific distributor
+    function isRetailerForDistributor(distributorId) {
+      return hasRetailerProfile() && getRetailerData().linked_distributor_id == distributorId;
+    }
+
+    // Helper: Verify retailer document ownership (by document ID or uid field)
+    function isOwnRetailerDocument(retailerId) {
+      return isAuthenticated() && (
+        retailerId == request.auth.uid ||
+        (request.resource != null && request.resource.data.uid == request.auth.uid) ||
+        (resource != null && resource.data.uid == request.auth.uid)
+      );
+    }
+
+    // Helper: Verify distributor document ownership (by document ID, distributor_id, or uid)
+    function isDistributorOwner(distributorId) {
+      return isAuthenticated() && (
+        distributorId == request.auth.uid ||
+        (request.resource != null && (request.resource.data.distributor_id == request.auth.uid || request.resource.data.uid == request.auth.uid)) ||
+        (resource != null && (resource.data.distributor_id == request.auth.uid || resource.data.uid == request.auth.uid))
+      );
+    }
+
+    // ============================================================================
+    // 0. User Profiles Collection
+    // ============================================================================
+    match /users/{userId} {
+      // Users can only read and write their own profile document
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ============================================================================
+    // 1. Distributors Collection
+    // ============================================================================
+    match /distributors/{distributorId} {
+      // A distributor can write to their own distributor document
+      allow write: if isDistributorOwner(distributorId);
+
+      // Authenticated users can read distributor profiles to verify routes, invite codes, and UPI details
+      allow read: if isAuthenticated();
+    }
+
+    // ============================================================================
+    // 2. Retailers Collection
+    // ============================================================================
+    match /retailers/{retailerId} {
+      // A retailer can only write to their own user document
+      allow write: if isOwnRetailerDocument(retailerId);
+
+      // A retailer can read their own document; linked distributors can read retailers linked to them
+      allow read: if isAuthenticated() && (
+        retailerId == request.auth.uid ||
+        (resource != null && resource.data.uid == request.auth.uid) ||
+        (resource != null && (resource.data.linked_distributor_id == request.auth.uid || resource.data.distributor_id == request.auth.uid))
+      );
+    }
+
+    // ============================================================================
+    // 3. Outlets Collection
+    // ============================================================================
+    match /outlets/{outletId} {
+      // A distributor can only write to outlets where distributor_id matches their own uid
+      allow create: if isAuthenticated() && request.resource.data.distributor_id == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid &&
+        request.resource.data.distributor_id == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && resource.data.distributor_id == request.auth.uid;
+
+      // Scoped read: A distributor can read their own outlets.
+      // A retailer can ONLY read their own linked outlet document, NOT another distributor's full outlet list.
+      allow read: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid ||
+        isRetailerForOutlet(outletId)
+      );
+    }
+
+    // ============================================================================
+    // 4. Products Catalog
+    // ============================================================================
+    match /products/{productId} {
+      // A distributor can only write to products where distributor_id matches their own uid
+      allow create: if isAuthenticated() && request.resource.data.distributor_id == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid &&
+        request.resource.data.distributor_id == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && resource.data.distributor_id == request.auth.uid;
+
+      // Scoped read: Distributor can read their own products.
+      // A linked retailer can read their distributor's catalog, but not other distributors' products.
+      allow read: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid ||
+        isRetailerForDistributor(resource.data.distributor_id)
+      );
+    }
+
+    // ============================================================================
+    // 5. Orders Historical and Real-Time Ledger
+    // ============================================================================
+    match /orders/{orderId} {
+      // Create:
+      // - A distributor where distributor_id matches their own uid
+      // - A retailer where outlet_id matches their linked outlet
+      allow create: if isAuthenticated() && (
+        request.resource.data.distributor_id == request.auth.uid ||
+        (hasRetailerProfile() && request.resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+
+      // Update:
+      allow update: if isAuthenticated() && (
+        (resource.data.distributor_id == request.auth.uid && request.resource.data.distributor_id == request.auth.uid) ||
+        (hasRetailerProfile() && resource.data.outlet_id == getRetailerData().outlet_id && request.resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+
+      // Delete: Only the distributor owner
+      allow delete: if isAuthenticated() && resource.data.distributor_id == request.auth.uid;
+
+      // Scoped read:
+      // - Distributor can read orders where distributor_id matches their uid
+      // - Retailer can ONLY read orders where outlet_id matches their linked outlet
+      allow read: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid ||
+        (hasRetailerProfile() && resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+    }
+
+    // ============================================================================
+    // 6. Nudges Notifications Collection
+    // ============================================================================
+    match /nudges/{nudgeId} {
+      allow write: if isAuthenticated() && (
+        (request.resource != null && request.resource.data.distributor_id == request.auth.uid) ||
+        (resource != null && resource.data.distributor_id == request.auth.uid) ||
+        (hasRetailerProfile() && resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+
+      allow read: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid ||
+        (hasRetailerProfile() && resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+    }
+
+    // ============================================================================
+    // 7. Connection Testing Document
+    // ============================================================================
+    match /test/{testId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ============================================================================
+    // 8. Zero-Trust Default Deny
+    // ============================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

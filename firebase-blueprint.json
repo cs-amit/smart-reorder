@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Distributor": {
+      "title": "Distributor",
+      "description": "FMCG Distributor operating regional supply routes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "route": { "type": "string" },
+        "invite_code": { "type": "string" },
+        "upi_id": { "type": "string" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "name", "route", "invite_code"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "FMCG Wholesale Product SKU",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "distributor_id": { "type": "string" },
+        "name": { "type": "string" },
+        "unit": { "type": "string" },
+        "wholesale_price": { "type": "number" },
+        "mrp": { "type": "number" },
+        "items_per_case": { "type": "number" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "distributor_id", "name", "unit"]
+    },
+    "Outlet": {
+      "title": "Outlet",
+      "description": "Retail Kirana or General Store outlet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "distributor_id": { "type": "string" },
+        "name": { "type": "string" },
+        "route": { "type": "string" },
+        "owner": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["id", "distributor_id", "name", "route"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Recorded FMCG restocking order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "distributor_id": { "type": "string" },
+        "outlet_id": { "type": "string" },
+        "product_id": { "type": "string" },
+        "date": { "type": "string" },
+        "quantity": { "type": "number" }
+      },
+      "required": ["id", "distributor_id", "outlet_id", "product_id", "date", "quantity"]
+    },
+    "Retailer": {
+      "title": "Retailer",
+      "description": "Retailer store owner linked to a distributor via invite code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "linked_distributor_id": { "type": "string" },
+        "outlet_id": { "type": "string" },
+        "joined_at": { "type": "string" }
+      },
+      "required": ["id", "uid", "name", "phone", "linked_distributor_id"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Authenticated user profile with assigned role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "name": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile with role"
+    },
+    "/distributors/{distributorId}": {
+      "schema": "Distributor",
+      "description": "Registered distributors"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "SKU catalog"
+    },
+    "/outlets/{outletId}": {
+      "schema": "Outlet",
+      "description": "Retail outlets on distributor delivery routes"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Historical and newly confirmed FMCG orders"
+    },
+    "/retailers/{retailerId}": {
+      "schema": "Retailer",
+      "description": "Retailers linked to a distributor"
+    }
+  }
+}
