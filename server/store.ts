@@ -82,6 +82,25 @@ export async function findDistributorByInviteCode(code: string): Promise<Distrib
   return match ? (match.data() as Distributor) : null;
 }
 
+/**
+ * Each distributor has their own "as of" date override (a demo/testing
+ * convenience for previewing predictions on a different date), stored on
+ * their own distributor document. This must never be a single shared value —
+ * otherwise any signed-in user shifting "today" would shift it for every
+ * other distributor's predictions too.
+ */
+export async function getAsOfDate(distributorId: string): Promise<string> {
+  const dist = await getDistributor(distributorId);
+  return dist?.as_of_date_override || SEED_AS_OF_DATE;
+}
+
+export async function setAsOfDate(distributorId: string, date: string): Promise<void> {
+  await db.collection('distributors').doc(distributorId).set(
+    { as_of_date_override: date },
+    { merge: true }
+  );
+}
+
 export async function generateUniqueInviteCode(): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = randomCode('FMCG');
@@ -188,6 +207,11 @@ export async function getNudges(distributorId: string): Promise<NudgeRecord[]> {
   return q.docs
     .map(d => d.data() as NudgeRecord)
     .sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''));
+}
+
+export async function getNudgeById(nudgeId: string): Promise<NudgeRecord | null> {
+  const doc = await db.collection('nudges').doc(nudgeId).get();
+  return doc.exists ? (doc.data() as NudgeRecord) : null;
 }
 
 export async function saveNudge(nudge: NudgeRecord): Promise<NudgeRecord> {

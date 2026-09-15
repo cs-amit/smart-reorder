@@ -71,7 +71,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
   onDisconnect,
   onOrderPlaced,
 }) => {
-  const [activeTab, setActiveTab] = useState<'due' | 'history' | 'account'>('due');
+  const [activeTab, setActiveTab] = useState<'due' | 'messages' | 'history' | 'account'>('due');
 
   // Find effective linked outlet
   const effectiveOutlet = useMemo(() => {
@@ -454,6 +454,33 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           </button>
 
           <button
+            id="tab-messages-btn"
+            type="button"
+            onClick={() => setActiveTab('messages')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
+              activeTab === 'messages'
+                ? 'bg-[#0F766E] text-white shadow-xs'
+                : 'bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A]'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Messages</span>
+            {nudges.length > 0 && (
+              <span
+                className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  activeTab === 'messages'
+                    ? 'bg-white text-[#0F766E]'
+                    : nudges.some(n => !n.read)
+                    ? 'bg-[#DC2626] text-white'
+                    : 'bg-[#E2E8F0] text-[#0F172A]'
+                }`}
+              >
+                {nudges.filter(n => !n.read).length || nudges.length}
+              </span>
+            )}
+          </button>
+
+          <button
             id="tab-order-history-btn"
             type="button"
             onClick={() => setActiveTab('history')}
@@ -491,17 +518,6 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           </button>
         </div>
       </div>
-
-      {/* WhatsApp-styled unread message list */}
-      <WhatsAppNudgesList
-        nudges={nudges}
-        distributor={distributor}
-        outlet={effectiveOutlet}
-        products={products}
-        onConfirmDraftOrder={handleConfirmNudgeOrder}
-        onMarkAsRead={handleMarkNudgeRead}
-        onMarkAllAsRead={handleMarkAllNudgesRead}
-      />
 
       {/* TAB 1: DUE PRODUCTS */}
       {activeTab === 'due' && (
@@ -776,7 +792,34 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
         </div>
       )}
 
-      {/* TAB 2: ORDER HISTORY */}
+      {/* TAB 2: MESSAGES (persistent WhatsApp-styled nudge history — read and unread) */}
+      {activeTab === 'messages' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-[#F0FDFA] border border-[#99F6E4] rounded-2xl p-4 sm:p-5 flex items-start space-x-3">
+            <MessageSquare className="w-5 h-5 text-[#0F766E] shrink-0 mt-0.5" />
+            <div>
+              <h2 className="text-sm font-bold text-[#0F766E]">Messages from {distributor.name}</h2>
+              <p className="text-xs text-[#0F766E]/90 mt-0.5">
+                Automatic reorder reminders, styled like WhatsApp — this is a simulated in-app
+                message, not sent via real WhatsApp. Everything ever sent to your store stays
+                here, whether or not you've read it.
+              </p>
+            </div>
+          </div>
+
+          <WhatsAppNudgesList
+            nudges={nudges}
+            distributor={distributor}
+            outlet={effectiveOutlet}
+            products={products}
+            onConfirmDraftOrder={handleConfirmNudgeOrder}
+            onMarkAsRead={handleMarkNudgeRead}
+            onMarkAllAsRead={handleMarkAllNudgesRead}
+          />
+        </div>
+      )}
+
+      {/* TAB 3: ORDER HISTORY */}
       {activeTab === 'history' && (
         <div className="space-y-4 animate-in fade-in duration-150">
           {/* Search & Filter Header */}
@@ -918,7 +961,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
         </div>
       )}
 
-      {/* TAB 3: MY STORE */}
+      {/* TAB 4: MY STORE */}
       {activeTab === 'account' && (
         <div className="space-y-5 animate-in fade-in duration-150">
           {/* Main Identity Card */}

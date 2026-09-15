@@ -24,6 +24,7 @@ export interface Distributor {
   created_at?: string;
   is_demo?: boolean;
   has_completed_onboarding?: boolean;
+  as_of_date_override?: string;
 }
 
 export interface Product {

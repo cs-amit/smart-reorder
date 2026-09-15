@@ -55,22 +55,26 @@ function getPreviewUid(req: express.Request): string | undefined {
 }
 
 // ============================================================================
-// As-of-date (demo convenience for shifting "today"), persisted so a cold
-// restart mid-demo doesn't silently snap predictions back to the seed date.
+// As-of-date (demo convenience for shifting "today") — scoped per distributor
+// (stored on their own distributor doc), never a single shared value. If it
+// were shared, any signed-in user could shift "today" for every OTHER
+// distributor's predictions too.
 // ============================================================================
 
-let currentAsOfDate = store.SEED_AS_OF_DATE;
-
-async function loadAsOfDate(): Promise<void> {
-  const snap = await db.collection('system').doc('config').get();
-  if (snap.exists && snap.data()?.as_of_date) {
-    currentAsOfDate = snap.data()!.as_of_date;
-  }
+async function resolveAsOfDate(distributorId: string | null): Promise<string> {
+  if (!distributorId) return store.SEED_AS_OF_DATE;
+  return store.getAsOfDate(distributorId);
 }
 
-async function setAsOfDate(date: string): Promise<void> {
-  currentAsOfDate = date;
-  await db.collection('system').doc('config').set({ as_of_date: date }, { merge: true });
+/**
+ * A quantity is only valid if it's a finite positive integer. `!quantity`
+ * alone (used previously) only rejects 0/empty — it lets negative numbers
+ * and NaN (from non-numeric input) through, since both are "truthy" or
+ * silently coerce.
+ */
+function isPositiveQuantity(raw: unknown): boolean {
+  const n = Number(raw);
+  return Number.isFinite(n) && Number.isInteger(n) && n > 0;
 }
 
 // ============================================================================
@@ -145,7 +149,6 @@ let initPromise: Promise<void> | null = null;
 function ensureInitialized(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
-      await loadAsOfDate();
       await store.ensureDemoAccountSeeded();
     })().catch(err => {
       initPromise = null; // allow retry on next request if bootstrap failed
@@ -176,7 +179,7 @@ export function createApiApp(): express.Express {
   });
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', as_of_date: currentAsOfDate });
+    res.json({ status: 'ok', as_of_date: store.SEED_AS_OF_DATE });
   });
 
   // ==========================================================================
@@ -301,11 +304,14 @@ export function createApiApp(): express.Express {
   app.get('/api/distributor', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
     if (!distributorId) {
-      res.json({ success: true, as_of_date: currentAsOfDate, data: null });
+      res.json({ success: true, as_of_date: store.SEED_AS_OF_DATE, data: null });
       return;
     }
-    const dist = await store.getDistributor(distributorId);
-    res.json({ success: true, as_of_date: currentAsOfDate, data: dist });
+    const [dist, asOfDate] = await Promise.all([
+      store.getDistributor(distributorId),
+      resolveAsOfDate(distributorId),
+    ]);
+    res.json({ success: true, as_of_date: asOfDate, data: dist });
   });
 
   app.post(['/api/distributor', '/api/distributor/setup'], requireAuth, async (req: AuthedRequest, res) => {
@@ -338,22 +344,29 @@ export function createApiApp(): express.Express {
 
   app.get('/api/products', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
-    const data = distributorId ? await store.getProducts(distributorId) : [];
-    res.json({ success: true, as_of_date: currentAsOfDate, data });
+    const [data, asOfDate] = await Promise.all([
+      distributorId ? store.getProducts(distributorId) : Promise.resolve([]),
+      resolveAsOfDate(distributorId),
+    ]);
+    res.json({ success: true, as_of_date: asOfDate, data });
   });
 
   app.get('/api/outlets', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
-    const data = distributorId ? await store.getOutlets(distributorId) : [];
-    res.json({ success: true, as_of_date: currentAsOfDate, data });
+    const [data, asOfDate] = await Promise.all([
+      distributorId ? store.getOutlets(distributorId) : Promise.resolve([]),
+      resolveAsOfDate(distributorId),
+    ]);
+    res.json({ success: true, as_of_date: asOfDate, data });
   });
 
   app.get('/api/orders', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
     if (!distributorId) {
-      res.json({ success: true, as_of_date: currentAsOfDate, data: [] });
+      res.json({ success: true, as_of_date: store.SEED_AS_OF_DATE, data: [] });
       return;
     }
+    const asOfDate = await resolveAsOfDate(distributorId);
     const { outlet_id, product_id, source } = req.query;
     const [orders, outlets, products] = await Promise.all([
       store.getOrders(distributorId),
@@ -387,22 +400,23 @@ export function createApiApp(): express.Express {
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
 
-    res.json({ success: true, as_of_date: currentAsOfDate, data: enriched });
+    res.json({ success: true, as_of_date: asOfDate, data: enriched });
   });
 
   app.get('/api/nudges', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
     if (!distributorId) {
-      res.json({ success: true, as_of_date: currentAsOfDate, total: 0, data: [] });
+      res.json({ success: true, as_of_date: store.SEED_AS_OF_DATE, total: 0, data: [] });
       return;
     }
-    let list = await syncNudgesForDistributor(distributorId, currentAsOfDate);
+    const asOfDate = await resolveAsOfDate(distributorId);
+    let list = await syncNudgesForDistributor(distributorId, asOfDate);
     const { outlet_id, product_id, today_only, unread_only } = req.query;
     if (outlet_id && typeof outlet_id === 'string') list = list.filter(n => n.outlet_id === outlet_id);
     if (product_id && typeof product_id === 'string') list = list.filter(n => n.product_id === product_id);
-    if (today_only === 'true') list = list.filter(n => (n.sent_at || '').startsWith(currentAsOfDate));
+    if (today_only === 'true') list = list.filter(n => (n.sent_at || '').startsWith(asOfDate));
     if (unread_only === 'true') list = list.filter(n => !n.read);
-    res.json({ success: true, as_of_date: currentAsOfDate, total: list.length, data: list });
+    res.json({ success: true, as_of_date: asOfDate, total: list.length, data: list });
   });
 
   app.post('/api/nudges', requireAuth, async (req: AuthedRequest, res) => {
@@ -413,14 +427,15 @@ export function createApiApp(): express.Express {
         return;
       }
       const { outlet_id, product_id, message } = req.body;
-      const [outlets, products, orders] = await Promise.all([
+      const [outlets, products, orders, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
         store.getOrders(distributorId),
+        resolveAsOfDate(distributorId),
       ]);
       const outlet = outlets.find(o => o.id === outlet_id);
       const product = products.find(p => p.id === product_id);
-      const predictions = computePredictions(currentAsOfDate, outlets, products, orders);
+      const predictions = computePredictions(asOfDate, outlets, products, orders);
       const pred = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id);
 
       const pairOrders = orders
@@ -441,7 +456,7 @@ export function createApiApp(): express.Express {
         product_name: product?.name || product_id,
         product_unit: product?.unit || 'case',
         message: message || pred?.reasoning || `Reorder reminder for ${product?.name || product_id}.`,
-        sent_at: currentAsOfDate + 'T' + new Date().toISOString().split('T')[1],
+        sent_at: asOfDate + 'T' + new Date().toISOString().split('T')[1],
         read: false,
         suggested_quantity: suggestedQty,
         wholesale_price: product?.wholesale_price || pred?.wholesale_price || 500,
@@ -454,18 +469,34 @@ export function createApiApp(): express.Express {
   });
 
   app.patch('/api/nudges/:id/read', requireAuth, async (req: AuthedRequest, res) => {
+    const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
+    // Verify the nudge belongs to the caller's own distributor before mutating it —
+    // without this, any authenticated user could flip `read` on any other tenant's
+    // nudge just by guessing/enumerating its id.
+    const nudge = await store.getNudgeById(req.params.id);
+    if (!distributorId || !nudge || nudge.distributor_id !== distributorId) {
+      res.status(404).json({ success: false, message: 'Nudge not found.' });
+      return;
+    }
     await store.markNudgeRead(req.params.id);
     res.json({ success: true });
   });
 
   app.post('/api/nudges/mark-read', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
-    const { id, ids, outlet_id } = req.body;
-    if (id) await store.markNudgeRead(id);
-    if (Array.isArray(ids)) {
-      for (const nudgeId of ids) await store.markNudgeRead(nudgeId);
+    if (!distributorId) {
+      res.status(400).json({ success: false, message: 'No distributor account found for this user.' });
+      return;
     }
-    if (outlet_id && distributorId) {
+    const { id, ids, outlet_id } = req.body;
+    const ownNudgeIds = new Set((await store.getNudges(distributorId)).map(n => n.id));
+    if (id && ownNudgeIds.has(id)) await store.markNudgeRead(id);
+    if (Array.isArray(ids)) {
+      for (const nudgeId of ids) {
+        if (ownNudgeIds.has(nudgeId)) await store.markNudgeRead(nudgeId);
+      }
+    }
+    if (outlet_id) {
       await store.markNudgesReadForOutlet(distributorId, outlet_id);
     }
     res.json({ success: true, message: 'Nudges marked as read' });
@@ -474,23 +505,24 @@ export function createApiApp(): express.Express {
   app.get('/api/predictions', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
     if (!distributorId) {
-      res.json({ success: true, as_of_date: currentAsOfDate, data: [] });
+      res.json({ success: true, as_of_date: store.SEED_AS_OF_DATE, data: [] });
       return;
     }
+    const asOfDate = await resolveAsOfDate(distributorId);
     const [outlets, products, orders] = await Promise.all([
       store.getOutlets(distributorId),
       store.getProducts(distributorId),
       store.getOrders(distributorId),
     ]);
     if (products.length === 0 || orders.length === 0) {
-      res.json({ success: true, as_of_date: currentAsOfDate, data: [] });
+      res.json({ success: true, as_of_date: asOfDate, data: [] });
       return;
     }
-    let predictions = computePredictions(currentAsOfDate, outlets, products, orders);
+    let predictions = computePredictions(asOfDate, outlets, products, orders);
     const { outlet_id, product_id } = req.query;
     if (outlet_id && typeof outlet_id === 'string') predictions = predictions.filter(p => p.outlet_id === outlet_id);
     if (product_id && typeof product_id === 'string') predictions = predictions.filter(p => p.product_id === product_id);
-    res.json({ success: true, as_of_date: currentAsOfDate, data: predictions });
+    res.json({ success: true, as_of_date: asOfDate, data: predictions });
   });
 
   app.get('/api/predictions/:outlet_id/:product_id', requireAuth, async (req: AuthedRequest, res) => {
@@ -499,19 +531,20 @@ export function createApiApp(): express.Express {
       res.status(404).json({ success: false, message: 'No prediction found.' });
       return;
     }
-    const [outlets, products, orders] = await Promise.all([
+    const [outlets, products, orders, asOfDate] = await Promise.all([
       store.getOutlets(distributorId),
       store.getProducts(distributorId),
       store.getOrders(distributorId),
+      resolveAsOfDate(distributorId),
     ]);
-    const predictions = computePredictions(currentAsOfDate, outlets, products, orders);
+    const predictions = computePredictions(asOfDate, outlets, products, orders);
     const { outlet_id, product_id } = req.params;
     const prediction = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id);
     if (!prediction) {
       res.status(404).json({ success: false, message: `No prediction found for outlet ${outlet_id} and product ${product_id}` });
       return;
     }
-    res.json({ success: true, as_of_date: currentAsOfDate, data: prediction });
+    res.json({ success: true, as_of_date: asOfDate, data: prediction });
   });
 
   app.post('/api/outlets', requireAuth, async (req: AuthedRequest, res) => {
@@ -521,11 +554,14 @@ export function createApiApp(): express.Express {
         res.status(400).json({ success: false, message: 'No distributor account found for this user.' });
         return;
       }
-      const body = req.body || {};
+      const { id: _ignoredId, ...body } = req.body || {};
       if (!body.name || !body.route) {
         res.status(400).json({ success: false, message: 'Outlet name and route are required' });
         return;
       }
+      // Never trust a client-supplied id here — this is create-only, and
+      // accepting an id would let a caller overwrite another distributor's
+      // existing outlet document by guessing/reusing its id.
       const saved = await store.saveOutlet({ ...body, distributor_id: distributorId });
       res.status(201).json({ success: true, data: saved });
     } catch (err: any) {
@@ -541,7 +577,7 @@ export function createApiApp(): express.Express {
         res.status(400).json({ success: false, message: 'No distributor account found for this user.' });
         return;
       }
-      const body = req.body || {};
+      const { id: _ignoredId, ...body } = req.body || {};
       if (!body.name || !body.unit) {
         res.status(400).json({ success: false, message: 'Product name and unit are required' });
         return;
@@ -566,19 +602,22 @@ export function createApiApp(): express.Express {
       let outletsCount = 0, productsCount = 0, ordersCount = 0;
       if (Array.isArray(inOutlets) && inOutlets.length > 0) {
         for (const o of inOutlets) {
-          await store.saveOutlet({ ...o, distributor_id: distributorId });
+          const { id: _ignoredId, ...rest } = o || {};
+          await store.saveOutlet({ ...rest, distributor_id: distributorId });
         }
         outletsCount = inOutlets.length;
       }
       if (Array.isArray(inProducts) && inProducts.length > 0) {
         for (const p of inProducts) {
-          await store.saveProduct({ ...p, distributor_id: distributorId });
+          const { id: _ignoredId, ...rest } = p || {};
+          await store.saveProduct({ ...rest, distributor_id: distributorId });
         }
         productsCount = inProducts.length;
       }
       if (Array.isArray(inOrders) && inOrders.length > 0) {
-        await store.addOrdersBatch(inOrders.map((o: any) => ({ ...o, distributor_id: distributorId })));
-        ordersCount = inOrders.length;
+        const validOrders = inOrders.filter((o: any) => isPositiveQuantity(o?.quantity));
+        await store.addOrdersBatch(validOrders.map((o: any) => ({ ...o, distributor_id: distributorId })));
+        ordersCount = validOrders.length;
       }
 
       const dist = await store.getDistributor(distributorId);
@@ -586,12 +625,13 @@ export function createApiApp(): express.Express {
         await store.saveDistributor({ ...dist, has_completed_onboarding: true });
       }
 
-      const [outlets, products, orders] = await Promise.all([
+      const [outlets, products, orders, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
         store.getOrders(distributorId),
+        resolveAsOfDate(distributorId),
       ]);
-      const predictionsCount = computePredictions(currentAsOfDate, outlets, products, orders).length;
+      const predictionsCount = computePredictions(asOfDate, outlets, products, orders).length;
 
       res.json({
         success: true,
@@ -616,7 +656,12 @@ export function createApiApp(): express.Express {
         res.status(400).json({ success: false, message: 'Missing outlet_id, product_id, or quantity' });
         return;
       }
+      if (!isPositiveQuantity(quantity)) {
+        res.status(400).json({ success: false, message: 'Quantity must be a whole number greater than 0.' });
+        return;
+      }
 
+      const asOfDate = await resolveAsOfDate(distributorId);
       const finalPlacedBy = placed_by || (source === 'retailer' ? 'retailer' : 'distributor');
       const finalSource = source || (finalPlacedBy === 'retailer' ? 'retailer' : 'distributor');
 
@@ -625,7 +670,7 @@ export function createApiApp(): express.Express {
         distributor_id: distributorId,
         outlet_id,
         product_id,
-        date: date || currentAsOfDate,
+        date: date || asOfDate,
         quantity: Number(quantity),
         source: finalSource as any,
         placed_by: finalPlacedBy,
@@ -637,9 +682,9 @@ export function createApiApp(): express.Express {
         store.getProducts(distributorId),
         store.getOrders(distributorId),
       ]);
-      const predictions = computePredictions(currentAsOfDate, outlets, products, orders);
+      const predictions = computePredictions(asOfDate, outlets, products, orders);
       const updatedPrediction = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id) || null;
-      await syncNudgesForDistributor(distributorId, currentAsOfDate);
+      await syncNudgesForDistributor(distributorId, asOfDate);
 
       res.status(201).json({
         success: true,
@@ -664,14 +709,15 @@ export function createApiApp(): express.Express {
         res.status(400).json({ success: false, message: 'Image base64 data is required' });
         return;
       }
-      const [outlets, products] = await Promise.all([
+      const [outlets, products, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
+        resolveAsOfDate(distributorId),
       ]);
-      const result = await extractOrdersFromImage(image, mimeType || 'image/jpeg', currentAsOfDate, outlets, products);
+      const result = await extractOrdersFromImage(image, mimeType || 'image/jpeg', asOfDate, outlets, products);
       res.json({
         success: true,
-        as_of_date: currentAsOfDate,
+        as_of_date: asOfDate,
         data: result.candidateLines,
         model_used: result.modelUsed,
         fallback_used: result.fallbackUsed,
@@ -694,9 +740,10 @@ export function createApiApp(): express.Express {
         res.status(400).json({ success: false, message: 'Array of order lines is required' });
         return;
       }
-      const [outlets, products] = await Promise.all([
+      const [outlets, products, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
+        resolveAsOfDate(distributorId),
       ]);
 
       const toCreate: Order[] = [];
@@ -711,8 +758,8 @@ export function createApiApp(): express.Express {
           outlet_name: outlet?.name,
           product_id: line.product_id,
           product_name: product?.name,
-          date: line.date || currentAsOfDate,
-          quantity: Math.max(1, Math.round(Number(line.quantity))),
+          date: line.date || asOfDate,
+          quantity: Math.max(1, Math.round(Number(line.quantity)) || 1),
           source: 'ocr_import',
           placed_by: 'distributor',
         });
@@ -720,8 +767,8 @@ export function createApiApp(): express.Express {
       const createdOrders = await store.addOrdersBatch(toCreate);
 
       const allOrders = await store.getOrders(distributorId);
-      const predictionsCount = computePredictions(currentAsOfDate, outlets, products, allOrders).length;
-      await syncNudgesForDistributor(distributorId, currentAsOfDate);
+      const predictionsCount = computePredictions(asOfDate, outlets, products, allOrders).length;
+      await syncNudgesForDistributor(distributorId, asOfDate);
 
       res.status(201).json({
         success: true,
@@ -810,7 +857,13 @@ export function createApiApp(): express.Express {
   });
 
   // RESET DEMO DATA ONLY — resets solely the fixed demo account; other accounts untouched.
-  app.post('/api/reset', requireAuth, async (_req: AuthedRequest, res) => {
+  // Only the demo account itself may trigger this (not just "any signed-in user"),
+  // otherwise any real signup could reset/grief the demo mid-presentation.
+  app.post('/api/reset', requireAuth, async (req: AuthedRequest, res) => {
+    if (req.uid !== store.DEMO_DIST_ID) {
+      res.status(403).json({ success: false, message: 'Only the demo account can be reset.' });
+      return;
+    }
     try {
       await store.resetDemoAccount();
       const [outlets, products, orders] = await Promise.all([
@@ -818,11 +871,12 @@ export function createApiApp(): express.Express {
         store.getProducts(store.DEMO_DIST_ID),
         store.getOrders(store.DEMO_DIST_ID),
       ]);
-      const predictions = computePredictions(currentAsOfDate, outlets, products, orders);
+      const asOfDate = await resolveAsOfDate(store.DEMO_DIST_ID);
+      const predictions = computePredictions(asOfDate, outlets, products, orders);
       res.json({
         success: true,
         message: 'Demo account data reset to original seed data',
-        as_of_date: currentAsOfDate,
+        as_of_date: asOfDate,
         data: predictions,
       });
     } catch (err: any) {
@@ -832,16 +886,21 @@ export function createApiApp(): express.Express {
   });
 
   app.post('/api/set-date', requireAuth, async (req: AuthedRequest, res) => {
+    if (req.uid !== store.DEMO_DIST_ID) {
+      res.status(403).json({ success: false, message: 'Only the demo account can shift its date.' });
+      return;
+    }
     const { date } = req.body;
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      await setAsOfDate(date);
+      await store.setAsOfDate(store.DEMO_DIST_ID, date);
       const [outlets, products, orders] = await Promise.all([
         store.getOutlets(store.DEMO_DIST_ID),
         store.getProducts(store.DEMO_DIST_ID),
         store.getOrders(store.DEMO_DIST_ID),
       ]);
-      const updated = computePredictions(currentAsOfDate, outlets, products, orders);
-      res.json({ success: true, as_of_date: currentAsOfDate, data: updated });
+      const asOfDate = await resolveAsOfDate(store.DEMO_DIST_ID);
+      const updated = computePredictions(asOfDate, outlets, products, orders);
+      res.json({ success: true, as_of_date: asOfDate, data: updated });
     } else {
       res.status(400).json({ success: false, message: 'Invalid date format (YYYY-MM-DD)' });
     }

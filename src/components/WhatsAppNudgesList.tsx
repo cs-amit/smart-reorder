@@ -16,6 +16,10 @@ import {
   Send,
 } from 'lucide-react';
 
+// Renders every nudge ever sent, oldest first — this is the retailer's one
+// persistent place to see the full simulated WhatsApp history, not just
+// what's currently unread (which used to vanish once marked read).
+
 interface WhatsAppNudgesListProps {
   nudges: NudgeRecord[];
   distributor: Distributor;
@@ -35,11 +39,8 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
   onMarkAsRead,
   onMarkAllAsRead,
 }) => {
-  const unreadNudges = nudges.filter(n => !n.read);
-
-  if (unreadNudges.length === 0) {
-    return null;
-  }
+  const unreadCount = nudges.filter(n => !n.read).length;
+  const sortedNudges = [...nudges].sort((a, b) => (a.sent_at || '').localeCompare(b.sent_at || ''));
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return '9:00 AM';
@@ -89,7 +90,7 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
           </div>
         </div>
 
-        {unreadNudges.length > 1 && onMarkAllAsRead && (
+        {unreadCount > 1 && onMarkAllAsRead && (
           <button
             type="button"
             onClick={onMarkAllAsRead}
@@ -102,25 +103,36 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
 
       {/* WhatsApp Message Body / Chat Stream */}
       <div className="p-4 sm:p-5 space-y-4 max-h-[520px] overflow-y-auto">
-        {/* Date separator chip */}
-        <div className="flex justify-center">
-          <span className="bg-white/90 text-stone-600 text-[11px] font-semibold px-3 py-0.5 rounded-full shadow-2xs border border-stone-200/60">
-            TODAY
-          </span>
-        </div>
+        {sortedNudges.length === 0 ? (
+          <div className="text-center py-8">
+            <MessageSquare className="w-8 h-8 text-stone-400 mx-auto mb-2" />
+            <p className="text-xs text-stone-500 font-medium">
+              No reorder reminders yet. They'll show up here as soon as something's due.
+            </p>
+          </div>
+        ) : (
+          <div className="flex justify-center">
+            <span className="bg-white/90 text-stone-600 text-[11px] font-semibold px-3 py-0.5 rounded-full shadow-2xs border border-stone-200/60">
+              {sortedNudges.length} message{sortedNudges.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
 
-        {unreadNudges.map(nudge => {
+        {sortedNudges.map(nudge => {
           const prod = products.find(p => p.id === nudge.product_id);
           const quantity = nudge.suggested_quantity || 10;
           const unitPrice = nudge.wholesale_price || prod?.wholesale_price || 500;
           const subtotal = quantity * unitPrice;
           const timeStr = formatTime(nudge.sent_at);
+          const isRead = !!nudge.read;
 
           return (
             <div
               key={nudge.id}
               id={`whatsapp-nudge-bubble-${nudge.id}`}
-              className="max-w-xl mx-auto bg-white rounded-2xl p-4 shadow-sm border border-[#E0E0E0] space-y-3 relative"
+              className={`max-w-xl mx-auto bg-white rounded-2xl p-4 shadow-sm border space-y-3 relative ${
+                isRead ? 'border-[#E0E0E0]/70 opacity-80' : 'border-[#E0E0E0]'
+              }`}
             >
               {/* Sender & timestamp header */}
               <div className="flex items-center justify-between border-b border-stone-100 pb-2">
@@ -130,14 +142,18 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
                   </span>
                   <span className="text-[10px] text-stone-400">• Automated</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onMarkAsRead(nudge.id)}
-                  className="text-stone-400 hover:text-stone-700 p-1 rounded-lg transition-colors"
-                  title="Dismiss nudge"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                {isRead ? (
+                  <span className="text-[10px] text-stone-400 font-medium">Read</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onMarkAsRead(nudge.id)}
+                    className="text-stone-400 hover:text-stone-700 p-1 rounded-lg transition-colors"
+                    title="Mark as read"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Message text with reasoning string */}
@@ -200,10 +216,10 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
                 </div>
               </div>
 
-              {/* Timestamp and Double Checkmark footer */}
+              {/* Timestamp and checkmark footer — blue double-check only once actually read */}
               <div className="flex items-center justify-end space-x-1 text-[10px] text-stone-400 pt-0.5">
                 <span>{timeStr}</span>
-                <CheckCheck className="w-3 h-3 text-[#53bdeb]" />
+                <CheckCheck className={`w-3 h-3 ${isRead ? 'text-[#53bdeb]' : 'text-stone-400'}`} />
               </div>
             </div>
           );
