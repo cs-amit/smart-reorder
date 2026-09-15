@@ -243,6 +243,37 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
     }
   };
 
+  // Retailer-initiated order via the simulated WhatsApp chat — a distinct
+  // path from responding to a distributor-sent nudge. Same real backend
+  // write as every other order-placement path in this app; only the origin
+  // (a WhatsApp conversation the retailer started, not a dashboard tap or a
+  // reply to a nudge) is different.
+  const handleComposeWhatsAppOrder = async (productId: string, quantity: number): Promise<boolean> => {
+    if (!effectiveOutlet) return false;
+    const prod = products.find(p => p.id === productId);
+    if (!prod) return false;
+    try {
+      setOrderError(null);
+      await placeRetailerOrder({
+        outlet_id: effectiveOutlet.id,
+        outlet_name: effectiveOutlet.name,
+        product_id: productId,
+        product_name: prod.name,
+        quantity,
+        date: asOfDate,
+        distributor_id: distributor.id,
+      });
+      if (onOrderPlaced) {
+        onOrderPlaced();
+      }
+      return true;
+    } catch (err: any) {
+      console.error('Failed to place WhatsApp-composed order:', err);
+      setOrderError(err?.message || 'Failed to place order. Please try again.');
+      return false;
+    }
+  };
+
   const handleMarkNudgeRead = async (nudgeId: string) => {
     try {
       await markNudgeReadInDb(nudgeId);
@@ -572,6 +603,8 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
                 <p className="text-xs text-[#0F766E]/90 mt-0.5">
                   Based on how often you usually order. Quantities are already filled in
                   using the <strong>average of your last 3 orders</strong> — just check and confirm.
+                  Ordering here goes straight through the app, no WhatsApp involved — if you'd
+                  rather order by chat instead, that's in the <strong>Messages</strong> tab.
                 </p>
               </div>
             </div>
@@ -839,9 +872,11 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
             <div>
               <h2 className="text-sm font-bold text-[#0F766E]">Messages from {distributor.name}</h2>
               <p className="text-xs text-[#0F766E]/90 mt-0.5">
-                Automatic reorder reminders, styled like WhatsApp — this is a simulated in-app
-                message, not sent via real WhatsApp. Everything ever sent to your store stays
-                here, whether or not you've read it.
+                Styled to look and act like a real WhatsApp chat, but nothing here is sent via the
+                actual WhatsApp Business API — it's a simulation of two things a real integration
+                would let you do from your phone without opening this app: reply to a reorder
+                reminder, or start a brand new order yourself by chatting. Everything ever sent to
+                your store stays here, whether or not you've read it.
               </p>
             </div>
           </div>
@@ -854,6 +889,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
             onConfirmDraftOrder={handleConfirmNudgeOrder}
             onMarkAsRead={handleMarkNudgeRead}
             onMarkAllAsRead={handleMarkAllNudgesRead}
+            onComposeOrder={handleComposeWhatsAppOrder}
           />
         </div>
       )}
