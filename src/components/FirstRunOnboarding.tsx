@@ -264,7 +264,7 @@ export const FirstRunOnboarding: React.FC<FirstRunOnboardingProps> = ({
 
           {/* STEP 1: Business Name & Route */}
           {currentStep === 1 && (
-            <form onSubmit={handleStep1Submit} className="space-y-5">
+            <form onSubmit={handleStep1Submit} key="step1" className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-5">
               <div className="flex items-center space-x-3 pb-4 border-b border-[#E2E8F0]">
                 <div className="w-10 h-10 rounded-lg bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
                   <Building2 className="w-5 h-5" />
@@ -337,7 +337,7 @@ export const FirstRunOnboarding: React.FC<FirstRunOnboardingProps> = ({
 
           {/* STEP 2: Add First Outlet */}
           {currentStep === 2 && (
-            <form onSubmit={handleStep2Submit} className="space-y-5">
+            <form onSubmit={handleStep2Submit} key="step2" className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-5">
               <div className="flex items-center space-x-3 pb-4 border-b border-[#E2E8F0]">
                 <div className="w-10 h-10 rounded-lg bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
                   <Store className="w-5 h-5" />
@@ -445,7 +445,7 @@ export const FirstRunOnboarding: React.FC<FirstRunOnboardingProps> = ({
 
           {/* STEP 3: Add First Product */}
           {currentStep === 3 && (
-            <form onSubmit={handleStep3Submit} className="space-y-5">
+            <form onSubmit={handleStep3Submit} key="step3" className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-5">
               <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 rounded-lg bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">

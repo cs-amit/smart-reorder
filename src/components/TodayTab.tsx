@@ -317,7 +317,8 @@ export const TodayTab: React.FC<TodayTabProps> = ({
                       <tr
                         id={`today-row-${item.outlet_id}-${item.product_id}`}
                         onClick={() => toggleRow(rowKey)}
-                        className={`cursor-pointer transition-colors ${
+                        style={{ animationDelay: `${Math.min(index, 10) * 40}ms` }}
+                        className={`cursor-pointer transition-colors animate-in fade-in duration-300 fill-mode-both ${
                           isExpanded
                             ? 'bg-[#F0FDFA]'
                             : isOverdue

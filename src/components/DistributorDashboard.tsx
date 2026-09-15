@@ -158,51 +158,59 @@ export const DistributorDashboard: React.FC<DistributorDashboardProps> = ({
 
       {/* Screen 1: Today Screen */}
       {activeTab === 'today' && (
-        <TodayTab
-          predictions={predictions}
-          outlets={outlets}
-          products={products}
-          isLoading={isLoading}
-          asOfDate={asOfDate}
-          onRefreshData={onRefreshData}
-          onLogNudge={handleLogNudge}
-        />
+        <div key="today" className="animate-in fade-in slide-in-from-bottom-1 duration-200">
+          <TodayTab
+            predictions={predictions}
+            outlets={outlets}
+            products={products}
+            isLoading={isLoading}
+            asOfDate={asOfDate}
+            onRefreshData={onRefreshData}
+            onLogNudge={handleLogNudge}
+          />
+        </div>
       )}
 
       {/* Screen 2: Outlets Directory & Detail Screen */}
       {activeTab === 'outlets' && (
-        <OutletsTab
-          outlets={outlets}
-          products={products}
-          predictions={predictions}
-          asOfDate={asOfDate}
-          onRefreshData={onRefreshData}
-          onLogNudge={handleLogNudge}
-          onOpenPhotoImport={() => setIsPhotoImportOpen(true)}
-        />
+        <div key="outlets" className="animate-in fade-in slide-in-from-bottom-1 duration-200">
+          <OutletsTab
+            outlets={outlets}
+            products={products}
+            predictions={predictions}
+            asOfDate={asOfDate}
+            onRefreshData={onRefreshData}
+            onLogNudge={handleLogNudge}
+            onOpenPhotoImport={() => setIsPhotoImportOpen(true)}
+          />
+        </div>
       )}
 
       {/* Screen 3: Orders Chronological Log */}
       {activeTab === 'orders' && (
-        <OrdersTab
-          orders={orders}
-          outlets={outlets}
-          products={products}
-          asOfDate={asOfDate}
-          onOpenPhotoImport={() => setIsPhotoImportOpen(true)}
-        />
+        <div key="orders" className="animate-in fade-in slide-in-from-bottom-1 duration-200">
+          <OrdersTab
+            orders={orders}
+            outlets={outlets}
+            products={products}
+            asOfDate={asOfDate}
+            onOpenPhotoImport={() => setIsPhotoImportOpen(true)}
+          />
+        </div>
       )}
 
       {/* Screen 4: Nudges Sent Today Log */}
       {activeTab === 'nudges' && (
-        <NudgesTab
-          nudges={nudges}
-          asOfDate={asOfDate}
-          outlets={outlets}
-          products={products}
-          onRefresh={loadNudges}
-          onManualNudge={handleLogNudge}
-        />
+        <div key="nudges" className="animate-in fade-in slide-in-from-bottom-1 duration-200">
+          <NudgesTab
+            nudges={nudges}
+            asOfDate={asOfDate}
+            outlets={outlets}
+            products={products}
+            onRefresh={loadNudges}
+            onManualNudge={handleLogNudge}
+          />
+        </div>
       )}
 
       {/* Import Orders from Photo Modal */}

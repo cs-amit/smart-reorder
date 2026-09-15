@@ -293,7 +293,7 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
             {stage !== 'idle' && stage !== 'placing' && (
               <div className="max-w-xl mx-auto space-y-2 px-1">
                 {/* Outgoing (retailer) bubble */}
-                <div className="flex justify-end">
+                <div className="flex justify-end animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="max-w-[85%] bg-[#DCF8C6] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-stone-800 shadow-xs">
                     Requesting payment for {quantity} {unitLabel} of {productLabel} — ₹
                     {subtotal.toLocaleString('en-IN')}…
@@ -302,7 +302,7 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
 
                 {/* Incoming (distributor bot) QR reply bubble */}
                 {(stage === 'qr' || stage === 'paid') && (
-                  <div className="flex justify-start">
+                  <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <div className="max-w-[85%] bg-white border border-[#E0E0E0] rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-xs space-y-2.5">
                       <span className="text-xs font-bold text-[#075E54]">{distributor.name}</span>
                       {qrDataUrls[nudge.id] ? (
@@ -337,7 +337,7 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
 
                 {/* Confirmation bubble */}
                 {stage === 'paid' && (
-                  <div className="flex justify-start">
+                  <div className="flex justify-start animate-in fade-in zoom-in-95 duration-300">
                     <div className="max-w-[85%] bg-[#E7FFDB] border border-[#B2E496] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs font-semibold text-emerald-900 shadow-xs flex items-center space-x-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
                       <span>Payment received! Your order is confirmed.</span>

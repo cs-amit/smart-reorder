@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { BUTTON_STYLES, CARD_STYLE } from '../lib/theme';
 import { UserRole } from '../types';
+import { Reveal } from './Reveal';
 
 interface LandingPageProps {
   onSelectRoleForSignUp: (role: UserRole) => void;
@@ -104,28 +105,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
             {/* Tagline */}
-            <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#F0FDFA] border border-[#99F6E4] text-xs font-semibold text-[#0F766E] mb-6">
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#F0FDFA] border border-[#99F6E4] text-xs font-semibold text-[#0F766E] mb-6">
               <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
               <span>Built for local distributors and kirana stores</span>
             </div>
 
             {/* One-sentence core statement */}
-            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-[#0F172A] leading-tight sm:leading-[1.18]">
+            <h1 className="animate-in fade-in slide-in-from-bottom-3 duration-700 delay-100 fill-mode-both text-3xl sm:text-5xl font-extrabold tracking-tight text-[#0F172A] leading-tight sm:leading-[1.18]">
               Know exactly which shop needs a reorder — before they run out.
             </h1>
 
-            <p className="mt-6 text-base sm:text-lg text-[#64748B] max-w-2xl mx-auto leading-relaxed">
+            <p className="animate-in fade-in slide-in-from-bottom-3 duration-700 delay-200 fill-mode-both mt-6 text-base sm:text-lg text-[#64748B] max-w-2xl mx-auto leading-relaxed">
               Smart Reorder learns each shop's ordering pattern and tells you who's due today —
               so no shop gets skipped and no salesman visit goes to waste.
             </p>
 
             {/* Two Clear Primary CTAs */}
-            <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
+            <div className="animate-in fade-in slide-in-from-bottom-3 duration-700 delay-300 fill-mode-both mt-10 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
               <button
                 id="cta-distributor-btn"
                 type="button"
                 onClick={() => onSelectRoleForSignUp('distributor')}
-                className="group p-5 rounded-xl bg-[#0F766E] hover:bg-[#14B8A6] text-white text-left transition-all shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between"
+                className="group p-5 rounded-xl bg-[#0F766E] hover:bg-[#14B8A6] text-white text-left transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="w-10 h-10 rounded-lg bg-white/15 flex items-center justify-center text-white">
@@ -147,7 +148,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 id="cta-retailer-btn"
                 type="button"
                 onClick={() => onSelectRoleForSignUp('retailer')}
-                className="group p-5 rounded-xl bg-white hover:bg-[#F0FDFA] border-2 border-[#0F766E] text-left transition-all shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between"
+                className="group p-5 rounded-xl bg-white hover:bg-[#F0FDFA] border-2 border-[#0F766E] text-left transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="w-10 h-10 rounded-lg bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
@@ -211,7 +212,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
             {/* Step 1 */}
-            <div className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative`}>
+            <Reveal className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative hover:shadow-md hover:-translate-y-0.5 transition-all`}>
               <div className="flex items-center justify-between mb-5">
                 <div className="w-12 h-12 rounded-xl bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
                   <BarChart3 className="w-6 h-6" />
@@ -228,10 +229,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />
                 <span>No spreadsheets, no extra data entry</span>
               </div>
-            </div>
+            </Reveal>
 
             {/* Step 2 */}
-            <div className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative`}>
+            <Reveal delay="delay-150" className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative hover:shadow-md hover:-translate-y-0.5 transition-all`}>
               <div className="flex items-center justify-between mb-5">
                 <div className="w-12 h-12 rounded-xl bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
                   <Clock className="w-6 h-6" />
@@ -248,10 +249,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />
                 <span>Catch shops before they run out and call someone else</span>
               </div>
-            </div>
+            </Reveal>
 
             {/* Step 3 */}
-            <div className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative`}>
+            <Reveal delay="delay-300" className={`${CARD_STYLE} p-6 sm:p-8 flex flex-col relative hover:shadow-md hover:-translate-y-0.5 transition-all`}>
               <div className="flex items-center justify-between mb-5">
                 <div className="w-12 h-12 rounded-xl bg-[#F0FDFA] border border-[#99F6E4] flex items-center justify-center text-[#0F766E]">
                   <Send className="w-6 h-6" />
@@ -268,7 +269,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />
                 <span>Orders come in without a single sales visit</span>
               </div>
-            </div>
+            </Reveal>
           </div>
         </div>
       </section>
@@ -290,7 +291,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-5xl mx-auto">
             {/* Traditional Model Card */}
-            <div className="bg-white rounded-xl border-2 border-[#FECACA] p-6 sm:p-8 shadow-xs flex flex-col justify-between">
+            <Reveal animation="fade-in slide-in-from-left-4" className="bg-white rounded-xl border-2 border-[#FECACA] p-6 sm:p-8 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-4 border-b border-[#FEE2E2]">
                   <span className="text-xs font-bold uppercase tracking-wider text-[#DC2626]">
@@ -338,10 +339,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="mt-8 pt-4 border-t border-[#E2E8F0] text-xs font-semibold text-[#64748B]">
                 Average cost per route: <strong className="text-[#0F172A]">₹18,000–25,000 / month</strong>
               </div>
-            </div>
+            </Reveal>
 
             {/* Smart Reorder Model Card */}
-            <div className="bg-white rounded-xl border-2 border-[#0F766E] p-6 sm:p-8 shadow-md flex flex-col justify-between relative overflow-hidden">
+            <Reveal animation="fade-in slide-in-from-right-4" delay="delay-150" className="bg-white rounded-xl border-2 border-[#0F766E] p-6 sm:p-8 shadow-md flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 bg-[#0F766E] text-white px-4 py-1 rounded-bl-xl text-xs font-bold uppercase tracking-wider">
                 97% Cost Reduction
               </div>
@@ -394,7 +395,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <span className="font-semibold text-[#0F766E]">Saves roughly ₹35 per shop, every visit</span>
                 <span className="font-bold text-[#16A34A] bg-[#DCFCE7] px-2 py-0.5 rounded">Low Cost</span>
               </div>
-            </div>
+            </Reveal>
           </div>
         </div>
       </section>
@@ -402,7 +403,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* 5. Network Benefits Callout */}
       <section id="network" className="py-14 sm:py-20 bg-white border-b border-[#E2E8F0]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto bg-[#F0FDFA] rounded-2xl border border-[#99F6E4] p-8 sm:p-12 text-center">
+          <Reveal animation="fade-in zoom-in-95" className="max-w-4xl mx-auto bg-[#F0FDFA] rounded-2xl border border-[#99F6E4] p-8 sm:p-12 text-center">
             <h3 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight">
               Ready to never miss a reorder again?
             </h3>
@@ -429,7 +430,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <span>Get Started as Retailer</span>
               </button>
             </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 

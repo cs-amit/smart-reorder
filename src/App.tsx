@@ -24,7 +24,7 @@ import {
   fetchCurrentUser,
   loginAsDemo,
 } from './lib/authService';
-import { AlertTriangle, Building2, Store, Truck, MapPin, KeyRound, Check } from 'lucide-react';
+import { AlertTriangle, Building2, Store, Truck, MapPin, KeyRound, Check, Loader2 } from 'lucide-react';
 import { BUTTON_STYLES, CARD_STYLE } from './lib/theme';
 
 // Matches DEMO_RETAILER_ID in server.ts — lets the demo distributor account
@@ -44,8 +44,9 @@ const RetailerView = lazy(() =>
 );
 
 const RoleViewLoadingFallback = () => (
-  <div className="flex items-center justify-center py-24 text-sm text-[#64748B]">
-    Loading...
+  <div className="flex flex-col items-center justify-center py-24 space-y-3 text-sm text-[#64748B] animate-in fade-in duration-200">
+    <Loader2 className="w-6 h-6 animate-spin text-[#0F766E]" />
+    <span>Loading...</span>
   </div>
 );
 
