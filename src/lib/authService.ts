@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { auth } from './firebase';
 import { AppUser, UserRole, Distributor, Retailer, Outlet } from '../types';
@@ -192,6 +193,30 @@ export async function loginUser(
 
   notifyListeners(data.user);
   return { user: data.user, distributor: data.distributor, retailer: data.retailer, outlet: data.outlet };
+}
+
+/**
+ * Send a Firebase-hosted password reset email. Free, built into Firebase
+ * Auth — no backend involvement needed since Firebase handles the token
+ * and the reset page itself.
+ */
+export async function resetPassword(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail);
+  } catch (fbErr: any) {
+    if (fbErr.code === 'auth/user-not-found') {
+      // Don't reveal whether an email is registered — same UX either way.
+      return;
+    }
+    if (fbErr.code === 'auth/invalid-email') {
+      throw new Error('Please enter a valid email address.');
+    }
+    if (fbErr.code === 'auth/too-many-requests') {
+      throw new Error('Too many attempts. Please wait a moment and try again.');
+    }
+    throw new Error(fbErr.message || 'Failed to send reset email. Please try again.');
+  }
 }
 
 /**

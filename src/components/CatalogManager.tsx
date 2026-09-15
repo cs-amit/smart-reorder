@@ -205,7 +205,7 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-lg font-bold text-[#0F172A] tracking-tight">
-                {distributor.agency_name || distributor.name || 'Your FMCG Agency'}
+                {distributor.name || 'Your FMCG Agency'}
               </h2>
               <button
                 type="button"

@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import { AppShell, DistributorTabKey, RetailerTabKey } from './components/AppShell';
 import { LandingPage } from './components/LandingPage';
 import { AuthScreen } from './components/AuthScreen';
-import { DistributorDashboard, DistributorTab } from './components/DistributorDashboard';
-import { RetailerView } from './components/RetailerView';
+import type { DistributorTab } from './components/DistributorDashboard';
 import { CatalogManager } from './components/CatalogManager';
 import { DistributorSetupModal } from './components/DistributorSetupModal';
 import { FirstRunOnboarding } from './components/FirstRunOnboarding';
@@ -31,6 +30,24 @@ import { BUTTON_STYLES, CARD_STYLE } from './lib/theme';
 // Matches DEMO_RETAILER_ID in server.ts — lets the demo distributor account
 // preview the populated retailer dashboard instead of an empty join screen.
 const DEMO_RETAILER_UID = 'usr_ret_demo1';
+
+// Lazy-loaded: a given session only ever needs ONE of these two role views,
+// never both, so there's no reason to ship the other role's code in the
+// initial bundle — most relevant for the retailer persona (CLAUDE.md frames
+// them as a budget-phone Khatabook/Vyapar-style user, where first-load size
+// is felt most).
+const DistributorDashboard = lazy(() =>
+  import('./components/DistributorDashboard').then(m => ({ default: m.DistributorDashboard }))
+);
+const RetailerView = lazy(() =>
+  import('./components/RetailerView').then(m => ({ default: m.RetailerView }))
+);
+
+const RoleViewLoadingFallback = () => (
+  <div className="flex items-center justify-center py-24 text-sm text-[#64748B]">
+    Loading...
+  </div>
+);
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(getStoredUser());
@@ -316,6 +333,7 @@ export default function App() {
       )}
 
       {/* Main Role Content Views */}
+      <Suspense fallback={<RoleViewLoadingFallback />}>
       {activeViewRole === 'distributor' ? (
         <>
           {/* Tabs: Today / Outlets / Orders / Nudges */}
@@ -378,7 +396,7 @@ export default function App() {
                       Business Name
                     </span>
                     <span className="text-sm font-bold text-[#0F172A]">
-                      {distributor?.agency_name || distributor?.name || currentUser.name || 'Not set yet'}
+                      {distributor?.name || currentUser.name || 'Not set yet'}
                     </span>
                   </div>
 
@@ -444,6 +462,7 @@ export default function App() {
           }
         />
       )}
+      </Suspense>
 
       {/* Distributor Setup / Settings Modal */}
       {currentUser?.uid && (

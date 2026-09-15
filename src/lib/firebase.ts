@@ -25,6 +25,22 @@ export const isFirebaseConfigured = Boolean(
   import.meta.env.VITE_FIREBASE_PROJECT_ID !== 'smart-reorder-demo'
 );
 
+// In a real production build, silently running on the fake demo config would
+// mean every real login/write fails with confusing Firebase SDK errors and
+// no clear signal why. Dev/sandbox use of the fallback config is fine and
+// expected; a production build using it is a misconfigured deploy — fail
+// loudly (console, not a thrown error, so the app still renders enough to
+// show this) rather than silently degrading.
+if (import.meta.env.PROD && !isFirebaseConfigured) {
+  console.error(
+    '[Smart Reorder] Firebase is not configured for this production build — ' +
+    'VITE_FIREBASE_API_KEY / VITE_FIREBASE_PROJECT_ID are missing or still the ' +
+    'placeholder demo values. Sign-in and data will not work until real Firebase ' +
+    'env vars are set (Vercel: Project Settings -> Environment Variables) and the ' +
+    'site is redeployed.'
+  );
+}
+
 /**
  * Wraps any asynchronous promise with a strict timeout so UI components
  * never remain stuck on an indefinite loading/spinning state.

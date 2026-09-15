@@ -13,7 +13,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { UserRole, AppUser } from '../types';
-import { loginUser, registerUser } from '../lib/authService';
+import { loginUser, registerUser, resetPassword } from '../lib/authService';
 import { BUTTON_STYLES, CARD_STYLE } from '../lib/theme';
 
 interface AuthScreenProps {
@@ -36,6 +36,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [role, setRole] = useState<UserRole>(initialRole);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +85,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setError(null);
   };
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Enter your email address above first, then tap "Forgot password?".');
+      return;
+    }
+    setError(null);
+    setIsSendingReset(true);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send reset email. Please try again.');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-[#CCFBF1] selection:text-[#0F766E]">
       <div className="sm:mx-auto sm:w-full sm:max-w-md px-4">
@@ -118,6 +137,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             onClick={() => {
               setMode('signin');
               setError(null);
+              setResetSent(false);
             }}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${
               mode === 'signin'
@@ -133,6 +153,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             onClick={() => {
               setMode('signup');
               setError(null);
+              setResetSent(false);
             }}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${
               mode === 'signup'
@@ -153,6 +174,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             >
               <AlertCircle className="w-4 h-4 text-[#DC2626] shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {resetSent && (
+            <div
+              id="auth-reset-sent-alert"
+              className="mb-4 p-3 bg-[#F0FDFA] border border-[#99F6E4] rounded-lg text-xs text-[#0F766E] flex items-start space-x-2"
+            >
+              <CheckCircle2 className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
+              <span>
+                If an account exists for <strong>{email.trim()}</strong>, a password reset
+                link has been sent — check your inbox.
+              </span>
             </div>
           )}
 
@@ -243,9 +277,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
             {/* Password */}
             <div>
-              <label htmlFor="auth-password" className="block text-xs font-medium text-[#0F172A] mb-1">
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="auth-password" className="block text-xs font-medium text-[#0F172A]">
+                  Password
+                </label>
+                {mode === 'signin' && (
+                  <button
+                    id="auth-forgot-password-btn"
+                    type="button"
+                    disabled={isSendingReset}
+                    onClick={handleForgotPassword}
+                    className="text-[11px] font-semibold text-[#0F766E] hover:text-[#14B8A6] disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSendingReset ? 'Sending...' : 'Forgot password?'}
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#64748B]">
                   <Lock className="w-4 h-4" />

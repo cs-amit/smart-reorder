@@ -203,6 +203,11 @@ export function createApiApp(): express.Express {
   app.post('/api/auth/register', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const uid = req.uid!;
+      const rateLimit = await store.checkRateLimit(uid, 'register', 10, 60 * 60 * 1000);
+      if (!rateLimit.allowed) {
+        res.status(429).json({ success: false, message: 'Too many requests — please wait a moment and try again.' });
+        return;
+      }
       const email = (req.userEmail || '').toLowerCase();
       const { role, name } = req.body || {};
       const finalRole = role === 'retailer' ? 'retailer' : 'distributor';
@@ -715,6 +720,16 @@ export function createApiApp(): express.Express {
       const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
       if (!distributorId) {
         res.status(400).json({ success: false, message: 'No distributor account found for this user.' });
+        return;
+      }
+      // This calls a paid Gemini vision API per request — cap it per caller so
+      // a runaway client (or deliberate abuse) can't run up real cost.
+      const rateLimit = await store.checkRateLimit(req.uid!, 'gemini_extract', 20, 60 * 60 * 1000);
+      if (!rateLimit.allowed) {
+        res.status(429).json({
+          success: false,
+          message: `Too many photo imports — please wait before trying again (resets ${rateLimit.resetAt}).`,
+        });
         return;
       }
       const { image, mimeType } = req.body;

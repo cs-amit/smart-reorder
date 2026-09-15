@@ -19,7 +19,14 @@ import { getAuth } from 'firebase-admin/auth';
 function resolveCredential() {
   const inlineJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (inlineJson) {
-    return cert(JSON.parse(inlineJson));
+    try {
+      return cert(JSON.parse(inlineJson));
+    } catch (err) {
+      throw new Error(
+        'FIREBASE_SERVICE_ACCOUNT_JSON is set but is not valid JSON — check it was pasted ' +
+        'in full and not double-escaped.'
+      );
+    }
   }
   const explicitPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
   if (explicitPath) {
@@ -28,7 +35,20 @@ function resolveCredential() {
       return cert(JSON.parse(fs.readFileSync(resolved, 'utf-8')));
     }
   }
-  return applicationDefault();
+  try {
+    return applicationDefault();
+  } catch (err) {
+    // On Vercel (not real GCP infra) there is no ambient credential, so this
+    // is the expected failure mode for a deploy that's simply missing its
+    // Firebase env var — surface a clear cause instead of the generic ADC
+    // error, which doesn't say what to actually go set.
+    throw new Error(
+      'No Firebase Admin credential could be resolved. Set FIREBASE_SERVICE_ACCOUNT_JSON ' +
+      '(the full service account key JSON, for Vercel/non-GCP hosting) or ' +
+      'FIREBASE_SERVICE_ACCOUNT_PATH (a local key file path, for local dev). ' +
+      `Original error: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 const app = getApps().length

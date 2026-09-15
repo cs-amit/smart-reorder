@@ -71,7 +71,7 @@ export const DistributorDashboard: React.FC<DistributorDashboardProps> = ({
 
   const loadNudges = async () => {
     try {
-      const data = await fetchNudgesFromDb(asOfDate);
+      const data = await fetchNudgesFromDb();
       setNudges(data);
     } catch (err) {
       console.warn('Failed to load nudges from Firestore:', err);

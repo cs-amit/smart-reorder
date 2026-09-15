@@ -372,3 +372,50 @@ async function ensureDemoUserProfiles(): Promise<void> {
     });
   }
 }
+
+// ============================================================================
+// Rate limiting — a fixed-window counter per (uid, action), stored in
+// Firestore rather than in-memory. An in-memory counter would silently stop
+// working on Vercel: each serverless invocation can land in a fresh
+// container with no memory of prior requests, so limits would only "work"
+// by accident on a warm instance. This is deliberately simple (a single
+// document read + conditional write, not a sliding window or a transaction)
+// — for a course-scale demo the race-condition risk of two truly concurrent
+// requests both slipping through is an acceptable trade for staying free
+// and dependency-free.
+// ============================================================================
+
+export async function checkRateLimit(
+  uid: string,
+  action: string,
+  limit: number,
+  windowMs: number
+): Promise<{ allowed: boolean; remaining: number; resetAt: string }> {
+  const docId = `${action}_${uid}`;
+  const ref = db.collection('rate_limits').doc(docId);
+  const snap = await ref.get();
+  const now = Date.now();
+
+  const data = snap.exists ? (snap.data() as { count: number; windowStart: number }) : null;
+  const windowExpired = !data || now - data.windowStart > windowMs;
+
+  if (windowExpired) {
+    await ref.set({ count: 1, windowStart: now });
+    return { allowed: true, remaining: limit - 1, resetAt: new Date(now + windowMs).toISOString() };
+  }
+
+  if (data.count >= limit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: new Date(data.windowStart + windowMs).toISOString(),
+    };
+  }
+
+  await ref.set({ count: data.count + 1, windowStart: data.windowStart }, { merge: true });
+  return {
+    allowed: true,
+    remaining: limit - data.count - 1,
+    resetAt: new Date(data.windowStart + windowMs).toISOString(),
+  };
+}
