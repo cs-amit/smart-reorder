@@ -33,6 +33,8 @@ import {
   Info,
   Check,
   MessageSquare,
+  XCircle,
+  Ban,
 } from 'lucide-react';
 import { UpiPaymentModal } from './UpiPaymentModal';
 import { WhatsAppNudgesList } from './WhatsAppNudgesList';
@@ -41,6 +43,7 @@ import {
   cleanPhone,
   fetchNudgesFromDb,
   markNudgeReadInDb,
+  cancelOrderInDb,
 } from '../lib/firestoreService';
 import { BUTTON_STYLES, CARD_STYLE } from '../lib/theme';
 
@@ -125,7 +128,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
     }
 
     const relevant = orders
-      .filter(o => o.outlet_id === effectiveOutlet.id && o.product_id === productId)
+      .filter(o => o.outlet_id === effectiveOutlet.id && o.product_id === productId && o.status !== 'cancelled')
       .sort((a, b) => b.date.localeCompare(a.date));
 
     const last3 = relevant.slice(0, 3);
@@ -148,6 +151,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
   // Editable draft quantities per product
   const [draftQuantities, setDraftQuantities] = useState<Record<string, number>>({});
   const [isPlacingOrder, setIsPlacingOrder] = useState<Record<string, boolean>>({});
+  const [isCancelling, setIsCancelling] = useState<Record<string, boolean>>({});
   const [orderError, setOrderError] = useState<string | null>(null);
 
   // Active UPI Modal state
@@ -174,9 +178,13 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
     loadNudges();
   }, [effectiveOutlet, asOfDate]);
 
-  // Confirm draft order from WhatsApp nudge
-  const handleConfirmNudgeOrder = async (nudge: NudgeRecord) => {
-    if (!effectiveOutlet) return;
+  // Confirm draft order from WhatsApp nudge. The payment step for a
+  // nudge-originated order happens inline in the chat itself (see
+  // WhatsAppNudgesList's two-way pay-via-WhatsApp exchange) rather than the
+  // separate UPI modal used elsewhere — so this only places the real order
+  // and reports success/failure back to the chat component.
+  const handleConfirmNudgeOrder = async (nudge: NudgeRecord): Promise<boolean> => {
+    if (!effectiveOutlet) return false;
     const quantity = nudge.suggested_quantity || 10;
     const prod = products.find(p => p.id === nudge.product_id) || {
       id: nudge.product_id,
@@ -188,8 +196,6 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
       category: 'FMCG Wholesale',
     };
 
-    const totalAmount = quantity * (nudge.wholesale_price || prod.wholesale_price || 500);
-
     try {
       setOrderError(null);
       await markNudgeReadInDb(nudge.id);
@@ -199,7 +205,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
         )
       );
 
-      const newOrder = await placeRetailerOrder({
+      await placeRetailerOrder({
         outlet_id: effectiveOutlet.id,
         outlet_name: effectiveOutlet.name,
         product_id: nudge.product_id,
@@ -212,14 +218,11 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
       if (onOrderPlaced) {
         onOrderPlaced();
       }
-
-      setActiveUpiOrder(newOrder);
-      setActiveUpiProduct(prod);
-      setActiveUpiTotal(totalAmount);
-      setIsUpiModalOpen(true);
+      return true;
     } catch (err: any) {
       console.error('Failed to confirm nudge draft order:', err);
       setOrderError(err?.message || 'Failed to confirm order from nudge. Please try again.');
+      return false;
     }
   };
 
@@ -328,6 +331,25 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
       setOrderError(err?.message || 'Failed to place order. Please try again.');
     } finally {
       setIsPlacingOrder(prev => ({ ...prev, [pred.product_id]: false }));
+    }
+  };
+
+  // Cancel an order the distributor placed on this retailer's behalf.
+  // Server enforces eligibility (own outlet, distributor-placed only); this
+  // just calls it and refreshes orders/predictions on success.
+  const handleCancelOrder = async (orderId: string) => {
+    setIsCancelling(prev => ({ ...prev, [orderId]: true }));
+    setOrderError(null);
+    try {
+      await cancelOrderInDb(orderId, distributor.id);
+      if (onOrderPlaced) {
+        onOrderPlaced();
+      }
+    } catch (err: any) {
+      console.error('Failed to cancel order:', err);
+      setOrderError(err?.message || 'Failed to cancel order. Please try again.');
+    } finally {
+      setIsCancelling(prev => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -874,12 +896,16 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
                 const unitPrice = prod?.wholesale_price || 0;
                 const orderTotal = ord.quantity * unitPrice;
                 const isRetailerPlaced = ord.placed_by === 'retailer' || ord.source === 'retailer';
+                const isCancelled = ord.status === 'cancelled';
+                const isCancellable = ord.placed_by === 'distributor' && !isCancelled;
 
                 return (
                   <div
                     key={ord.id}
                     id={`order-card-${ord.id}`}
-                    className={`${CARD_STYLE} p-4 sm:p-5 hover:border-[#0F766E] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
+                    className={`${CARD_STYLE} p-4 sm:p-5 hover:border-[#0F766E] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      isCancelled ? 'opacity-60' : ''
+                    }`}
                   >
                     {/* Order Details */}
                     <div className="space-y-1 flex-1">
@@ -899,6 +925,13 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
                         ) : (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#F1F5F9] text-[#64748B]">
                             <span>Added by Distributor</span>
+                          </span>
+                        )}
+                        {/* Cancelled badge */}
+                        {isCancelled && (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FEE2E2] text-[#DC2626] border border-[#FECACA]">
+                            <Ban className="w-3 h-3 text-[#DC2626]" />
+                            <span>Cancelled</span>
                           </span>
                         )}
                       </div>
@@ -926,22 +959,40 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
                       </div>
                     </div>
 
-                    {/* View UPI QR button */}
+                    {/* Actions: cancel (distributor-placed only) + View UPI QR */}
                     <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
-                      <button
-                        id={`view-qr-${ord.id}`}
-                        type="button"
-                        onClick={() => {
-                          setActiveUpiOrder(ord);
-                          setActiveUpiProduct(prod || null);
-                          setActiveUpiTotal(orderTotal > 0 ? orderTotal : ord.quantity * 500);
-                          setIsUpiModalOpen(true);
-                        }}
-                        className={`${BUTTON_STYLES.secondary} text-xs py-1.5 px-3`}
-                      >
-                        <QrCode className="w-3.5 h-3.5 mr-1 text-[#0F766E]" />
-                        <span>View UPI QR</span>
-                      </button>
+                      {isCancellable && (
+                        <button
+                          id={`cancel-order-${ord.id}`}
+                          type="button"
+                          disabled={isCancelling[ord.id]}
+                          onClick={() => handleCancelOrder(ord.id)}
+                          className="flex items-center space-x-1.5 text-xs py-1.5 px-3 rounded-xl font-semibold border border-[#FECACA] bg-white text-[#DC2626] hover:bg-[#FEE2E2] disabled:opacity-50 transition-colors cursor-pointer"
+                        >
+                          {isCancelling[ord.id] ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isCancelling[ord.id] ? 'Cancelling...' : 'Cancel Order'}</span>
+                        </button>
+                      )}
+                      {!isCancelled && (
+                        <button
+                          id={`view-qr-${ord.id}`}
+                          type="button"
+                          onClick={() => {
+                            setActiveUpiOrder(ord);
+                            setActiveUpiProduct(prod || null);
+                            setActiveUpiTotal(orderTotal > 0 ? orderTotal : ord.quantity * 500);
+                            setIsUpiModalOpen(true);
+                          }}
+                          className={`${BUTTON_STYLES.secondary} text-xs py-1.5 px-3`}
+                        >
+                          <QrCode className="w-3.5 h-3.5 mr-1 text-[#0F766E]" />
+                          <span>View UPI QR</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

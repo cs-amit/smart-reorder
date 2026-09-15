@@ -161,6 +161,18 @@ export async function getOrders(distributorId: string): Promise<Order[]> {
   return q.docs.map(d => d.data() as Order);
 }
 
+export async function getOrderById(orderId: string): Promise<Order | null> {
+  const doc = await db.collection('orders').doc(orderId).get();
+  return doc.exists ? (doc.data() as Order) : null;
+}
+
+export async function cancelOrder(orderId: string): Promise<void> {
+  await db.collection('orders').doc(orderId).set(
+    { status: 'cancelled', cancelled_at: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
 export async function addOrder(order: Order): Promise<Order> {
   const withId: Order = { ...order, id: order.id || genId('ORD') };
   await db.collection('orders').doc(withId.id).set(withId);

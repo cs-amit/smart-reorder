@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import QRCode from 'qrcode';
 import { NudgeRecord, Product, Distributor, Outlet } from '../types';
 import {
   MessageSquare,
   Sparkles,
   CheckCheck,
   Check,
+  CheckCircle2,
   QrCode,
   Building2,
   Package,
@@ -14,18 +16,25 @@ import {
   X,
   Clock,
   Send,
+  Smartphone,
 } from 'lucide-react';
 
 // Renders every nudge ever sent, oldest first — this is the retailer's one
 // persistent place to see the full simulated WhatsApp history, not just
 // what's currently unread (which used to vanish once marked read).
 
+// Per-nudge "pay via WhatsApp" progress. This is purely local UI state (not
+// persisted) that plays out a simulated two-way exchange: the real order
+// write happens once, at the transition out of 'idle' — everything after
+// that is just the conversation animating forward.
+type PaymentStage = 'idle' | 'placing' | 'requesting' | 'qr' | 'paid';
+
 interface WhatsAppNudgesListProps {
   nudges: NudgeRecord[];
   distributor: Distributor;
   outlet: Outlet | null;
   products: Product[];
-  onConfirmDraftOrder: (nudge: NudgeRecord) => void;
+  onConfirmDraftOrder: (nudge: NudgeRecord) => Promise<boolean>;
   onMarkAsRead: (nudgeId: string) => void;
   onMarkAllAsRead?: () => void;
 }
@@ -41,6 +50,46 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
 }) => {
   const unreadCount = nudges.filter(n => !n.read).length;
   const sortedNudges = [...nudges].sort((a, b) => (a.sent_at || '').localeCompare(b.sent_at || ''));
+
+  const [paymentStage, setPaymentStage] = useState<Record<string, PaymentStage>>({});
+  const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
+
+  const handlePayViaWhatsApp = async (nudge: NudgeRecord, amount: number) => {
+    setPaymentStage(prev => ({ ...prev, [nudge.id]: 'placing' }));
+    const ok = await onConfirmDraftOrder(nudge);
+    if (!ok) {
+      setPaymentStage(prev => ({ ...prev, [nudge.id]: 'idle' }));
+      return;
+    }
+    setPaymentStage(prev => ({ ...prev, [nudge.id]: 'requesting' }));
+
+    const upiId = distributor.upi_id || 'distributor@upi';
+    const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
+      distributor.name
+    )}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Reorder-${nudge.id}`)}`;
+
+    // Small delay so the "requesting" bubble is visibly its own step before
+    // the QR reply arrives — mimics a real back-and-forth rather than
+    // everything popping in at once.
+    setTimeout(async () => {
+      try {
+        const url = await QRCode.toDataURL(upiString, {
+          width: 220,
+          margin: 2,
+          color: { dark: '#0F172A', light: '#ffffff' },
+          errorCorrectionLevel: 'M',
+        });
+        setQrDataUrls(prev => ({ ...prev, [nudge.id]: url }));
+      } catch (err) {
+        console.error('QR code generation error:', err);
+      }
+      setPaymentStage(prev => ({ ...prev, [nudge.id]: 'qr' }));
+    }, 700);
+  };
+
+  const handleIvePaid = (nudgeId: string) => {
+    setPaymentStage(prev => ({ ...prev, [nudgeId]: 'paid' }));
+  };
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return '9:00 AM';
@@ -125,10 +174,13 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
           const subtotal = quantity * unitPrice;
           const timeStr = formatTime(nudge.sent_at);
           const isRead = !!nudge.read;
+          const stage: PaymentStage = paymentStage[nudge.id] || 'idle';
+          const productLabel = nudge.product_name || prod?.name || nudge.product_id;
+          const unitLabel = nudge.product_unit || prod?.unit || 'cases';
 
           return (
+          <React.Fragment key={nudge.id}>
             <div
-              key={nudge.id}
               id={`whatsapp-nudge-bubble-${nudge.id}`}
               className={`max-w-xl mx-auto bg-white rounded-2xl p-4 shadow-sm border space-y-3 relative ${
                 isRead ? 'border-[#E0E0E0]/70 opacity-80' : 'border-[#E0E0E0]'
@@ -199,20 +251,33 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
                     </span>
                   </div>
 
-                  {/* Primary CTA button: Tapping takes them straight to confirming that order with UPI QR */}
-                  <button
-                    id={`whatsapp-confirm-btn-${nudge.id}`}
-                    type="button"
-                    onClick={() => {
-                      onMarkAsRead(nudge.id);
-                      onConfirmDraftOrder(nudge);
-                    }}
-                    className="bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-bold px-4 py-2 rounded-xl text-xs shadow-xs flex items-center space-x-1.5 transition-colors cursor-pointer border border-[#1ebd56]"
-                  >
-                    <QrCode className="w-3.5 h-3.5 text-stone-900" />
-                    <span>Confirm & Pay via UPI</span>
-                    <ArrowRight className="w-3 h-3 text-stone-900 ml-0.5" />
-                  </button>
+                  {/* Primary CTA: tapping starts the pay-via-WhatsApp exchange below */}
+                  {stage === 'idle' && (
+                    <button
+                      id={`whatsapp-confirm-btn-${nudge.id}`}
+                      type="button"
+                      onClick={() => {
+                        onMarkAsRead(nudge.id);
+                        handlePayViaWhatsApp(nudge, subtotal);
+                      }}
+                      className="bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-bold px-4 py-2 rounded-xl text-xs shadow-xs flex items-center space-x-1.5 transition-colors cursor-pointer border border-[#1ebd56]"
+                    >
+                      <Send className="w-3.5 h-3.5 text-stone-900" />
+                      <span>Pay via WhatsApp</span>
+                      <ArrowRight className="w-3 h-3 text-stone-900 ml-0.5" />
+                    </button>
+                  )}
+                  {stage === 'placing' && (
+                    <span className="text-[11px] font-semibold text-stone-500 px-2">
+                      Placing order…
+                    </span>
+                  )}
+                  {(stage === 'requesting' || stage === 'qr' || stage === 'paid') && (
+                    <span className="text-[11px] font-semibold text-emerald-700 flex items-center space-x-1">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Payment started — see below</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -222,6 +287,66 @@ export const WhatsAppNudgesList: React.FC<WhatsAppNudgesListProps> = ({
                 <CheckCheck className={`w-3 h-3 ${isRead ? 'text-[#53bdeb]' : 'text-stone-400'}`} />
               </div>
             </div>
+
+            {/* Two-way simulated "pay via WhatsApp" exchange — grows as the
+                retailer progresses, styled as real outgoing/incoming chat bubbles. */}
+            {stage !== 'idle' && stage !== 'placing' && (
+              <div className="max-w-xl mx-auto space-y-2 px-1">
+                {/* Outgoing (retailer) bubble */}
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] bg-[#DCF8C6] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-stone-800 shadow-xs">
+                    Requesting payment for {quantity} {unitLabel} of {productLabel} — ₹
+                    {subtotal.toLocaleString('en-IN')}…
+                  </div>
+                </div>
+
+                {/* Incoming (distributor bot) QR reply bubble */}
+                {(stage === 'qr' || stage === 'paid') && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] bg-white border border-[#E0E0E0] rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-xs space-y-2.5">
+                      <span className="text-xs font-bold text-[#075E54]">{distributor.name}</span>
+                      {qrDataUrls[nudge.id] ? (
+                        <img
+                          src={qrDataUrls[nudge.id]}
+                          alt="UPI QR Code"
+                          className="w-36 h-36 object-contain rounded-lg border border-stone-100 mx-auto"
+                        />
+                      ) : (
+                        <div className="w-36 h-36 flex items-center justify-center text-stone-400 text-[10px] mx-auto">
+                          Generating QR…
+                        </div>
+                      )}
+                      <div className="flex items-center justify-center space-x-1.5 text-[10px] text-stone-500">
+                        <Smartphone className="w-3 h-3 text-[#0F766E]" />
+                        <span>₹{subtotal.toLocaleString('en-IN')} · Scan to pay</span>
+                      </div>
+                      {stage === 'qr' && (
+                        <button
+                          id={`whatsapp-ive-paid-btn-${nudge.id}`}
+                          type="button"
+                          onClick={() => handleIvePaid(nudge.id)}
+                          className="w-full bg-[#0F766E] hover:bg-[#14B8A6] text-white font-bold py-2 rounded-xl text-xs shadow-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>I've Paid</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirmation bubble */}
+                {stage === 'paid' && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] bg-[#E7FFDB] border border-[#B2E496] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs font-semibold text-emerald-900 shadow-xs flex items-center space-x-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>Payment received! Your order is confirmed.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </React.Fragment>
           );
         })}
       </div>

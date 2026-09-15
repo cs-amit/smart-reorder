@@ -60,6 +60,8 @@ export interface Order {
   quantity: number;
   source?: OrderSource;
   placed_by?: string;
+  status?: 'placed' | 'cancelled';
+  cancelled_at?: string;
 }
 
 export interface NudgeAction {

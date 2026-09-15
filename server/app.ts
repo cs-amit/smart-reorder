@@ -67,6 +67,18 @@ async function resolveAsOfDate(distributorId: string | null): Promise<string> {
 }
 
 /**
+ * Orders feeding the prediction engine (gap medians, suggested quantities)
+ * must exclude cancelled ones — a cancelled order isn't evidence of a real
+ * reorder cycle, and counting it would skew future predictions. The full
+ * order list (cancelled included) is still what GET /api/orders returns,
+ * so order history stays a complete audit trail.
+ */
+async function getActiveOrders(distributorId: string): Promise<Order[]> {
+  const orders = await store.getOrders(distributorId);
+  return orders.filter(o => o.status !== 'cancelled');
+}
+
+/**
  * A quantity is only valid if it's a finite positive integer. `!quantity`
  * alone (used previously) only rejects 0/empty — it lets negative numbers
  * and NaN (from non-numeric input) through, since both are "truthy" or
@@ -86,7 +98,7 @@ async function syncNudgesForDistributor(distributorId: string, asOfDate: string)
   const [outlets, products, orders, existingNudges] = await Promise.all([
     store.getOutlets(distributorId),
     store.getProducts(distributorId),
-    store.getOrders(distributorId),
+    getActiveOrders(distributorId),
     store.getNudges(distributorId),
   ]);
 
@@ -397,6 +409,7 @@ export function createApiApp(): express.Express {
         wholesale_price: product ? product.wholesale_price : 0,
         source: ord.source || 'distributor',
         placed_by: ord.placed_by || (ord.source === 'retailer' ? 'retailer' : (ord.source || 'distributor')),
+        status: ord.status || 'placed',
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
 
@@ -430,7 +443,7 @@ export function createApiApp(): express.Express {
       const [outlets, products, orders, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
-        store.getOrders(distributorId),
+        getActiveOrders(distributorId),
         resolveAsOfDate(distributorId),
       ]);
       const outlet = outlets.find(o => o.id === outlet_id);
@@ -512,7 +525,7 @@ export function createApiApp(): express.Express {
     const [outlets, products, orders] = await Promise.all([
       store.getOutlets(distributorId),
       store.getProducts(distributorId),
-      store.getOrders(distributorId),
+      getActiveOrders(distributorId),
     ]);
     if (products.length === 0 || orders.length === 0) {
       res.json({ success: true, as_of_date: asOfDate, data: [] });
@@ -534,7 +547,7 @@ export function createApiApp(): express.Express {
     const [outlets, products, orders, asOfDate] = await Promise.all([
       store.getOutlets(distributorId),
       store.getProducts(distributorId),
-      store.getOrders(distributorId),
+      getActiveOrders(distributorId),
       resolveAsOfDate(distributorId),
     ]);
     const predictions = computePredictions(asOfDate, outlets, products, orders);
@@ -628,7 +641,7 @@ export function createApiApp(): express.Express {
       const [outlets, products, orders, asOfDate] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
-        store.getOrders(distributorId),
+        getActiveOrders(distributorId),
         resolveAsOfDate(distributorId),
       ]);
       const predictionsCount = computePredictions(asOfDate, outlets, products, orders).length;
@@ -680,7 +693,7 @@ export function createApiApp(): express.Express {
       const [outlets, products, orders] = await Promise.all([
         store.getOutlets(distributorId),
         store.getProducts(distributorId),
-        store.getOrders(distributorId),
+        getActiveOrders(distributorId),
       ]);
       const predictions = computePredictions(asOfDate, outlets, products, orders);
       const updatedPrediction = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id) || null;
@@ -767,7 +780,8 @@ export function createApiApp(): express.Express {
       const createdOrders = await store.addOrdersBatch(toCreate);
 
       const allOrders = await store.getOrders(distributorId);
-      const predictionsCount = computePredictions(asOfDate, outlets, products, allOrders).length;
+      const activeOrders = allOrders.filter(o => o.status !== 'cancelled');
+      const predictionsCount = computePredictions(asOfDate, outlets, products, activeOrders).length;
       await syncNudgesForDistributor(distributorId, asOfDate);
 
       res.status(201).json({
@@ -856,6 +870,41 @@ export function createApiApp(): express.Express {
     res.json({ success: true, data: { retailer, distributor: linkedDist, outlet: matchedOutlet } });
   });
 
+  // A retailer may cancel an order the DISTRIBUTOR placed on their behalf (not
+  // their own self-placed orders, and only for their own linked outlet). The
+  // order stays in history as an audit trail, marked cancelled, and is excluded
+  // from prediction math going forward via getActiveOrders().
+  app.post('/api/orders/:id/cancel', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
+      if (!distributorId) {
+        res.status(400).json({ success: false, message: 'No distributor account found for this user.' });
+        return;
+      }
+      const order = await store.getOrderById(req.params.id);
+      if (!order || order.distributor_id !== distributorId) {
+        res.status(404).json({ success: false, message: 'Order not found.' });
+        return;
+      }
+      const retailer = await store.getRetailer(req.uid!);
+      const isOwnOutletOrder = !!retailer && !!retailer.outlet_id && retailer.outlet_id === order.outlet_id;
+      const isDistributorPlaced = order.placed_by === 'distributor';
+      if (!retailer || !isOwnOutletOrder || !isDistributorPlaced) {
+        res.status(403).json({ success: false, message: 'This order cannot be cancelled from your account.' });
+        return;
+      }
+      if (order.status === 'cancelled') {
+        res.status(400).json({ success: false, message: 'Order is already cancelled.' });
+        return;
+      }
+      await store.cancelOrder(order.id);
+      res.json({ success: true, message: 'Order cancelled.', data: { ...order, status: 'cancelled' } });
+    } catch (err: any) {
+      console.error('Cancel order error:', err);
+      res.status(500).json({ success: false, message: err?.message || 'Failed to cancel order.' });
+    }
+  });
+
   // RESET DEMO DATA ONLY — resets solely the fixed demo account; other accounts untouched.
   // Only the demo account itself may trigger this (not just "any signed-in user"),
   // otherwise any real signup could reset/grief the demo mid-presentation.
@@ -869,7 +918,7 @@ export function createApiApp(): express.Express {
       const [outlets, products, orders] = await Promise.all([
         store.getOutlets(store.DEMO_DIST_ID),
         store.getProducts(store.DEMO_DIST_ID),
-        store.getOrders(store.DEMO_DIST_ID),
+        getActiveOrders(store.DEMO_DIST_ID),
       ]);
       const asOfDate = await resolveAsOfDate(store.DEMO_DIST_ID);
       const predictions = computePredictions(asOfDate, outlets, products, orders);
@@ -896,7 +945,7 @@ export function createApiApp(): express.Express {
       const [outlets, products, orders] = await Promise.all([
         store.getOutlets(store.DEMO_DIST_ID),
         store.getProducts(store.DEMO_DIST_ID),
-        store.getOrders(store.DEMO_DIST_ID),
+        getActiveOrders(store.DEMO_DIST_ID),
       ]);
       const asOfDate = await resolveAsOfDate(store.DEMO_DIST_ID);
       const updated = computePredictions(asOfDate, outlets, products, orders);

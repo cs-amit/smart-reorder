@@ -861,6 +861,21 @@ export async function markNudgeReadInDb(nudgeId: string): Promise<void> {
 }
 
 /**
+ * Cancel an order the distributor placed on a retailer's behalf. Server-side
+ * enforces that only the linked retailer may do this, and only for orders
+ * placed by the distributor (not the retailer's own confirmed orders) — this
+ * calls the API only (no direct Firestore fallback), since the eligibility
+ * check lives in the API layer, not in firestore.rules.
+ */
+export async function cancelOrderInDb(orderId: string, distributorId?: string): Promise<void> {
+  const res = await apiFetch(`/api/orders/${orderId}/cancel`, { method: 'POST' }, distributorId);
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to cancel order (Status ${res.status})`);
+  }
+}
+
+/**
  * Save a nudge record to Firestore and backend
  */
 export async function createNudgeInDb(nudge: {
