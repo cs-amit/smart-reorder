@@ -1,5 +1,5 @@
 import { db, adminAuth, FieldValue } from './firebaseAdmin.js';
-import { Distributor, Order, Outlet, Product, Retailer, NudgeRecord } from '../src/types.js';
+import { Distributor, Order, Outlet, Product, Retailer, NudgeRecord, LedgerEntry } from '../src/types.js';
 import seedDataRaw from '../src/data/seedData.json' with { type: 'json' };
 
 export const DEMO_DIST_ID = 'usr_dist_demo1';
@@ -173,6 +173,50 @@ export async function cancelOrder(orderId: string): Promise<void> {
   );
 }
 
+// ============================================================================
+// Credit ledger — an append-only log of charges (goods supplied on credit,
+// one per order placed) and payments (recorded by the distributor when a
+// retailer settles up). Outstanding balance is always the sum, computed on
+// read rather than cached, so it can never drift out of sync with the log —
+// entry counts per outlet are small enough that this is cheap. This is
+// deliberately independent of the simulated UPI/WhatsApp-pay screens (which
+// represent an on-the-spot payment for one order) — the ledger tracks the
+// running "goods supplied vs. cash collected" relationship overall, the way
+// a real distributor-retailer credit relationship actually works.
+// ============================================================================
+
+export async function addLedgerEntry(entry: Omit<LedgerEntry, 'id' | 'created_at'>): Promise<LedgerEntry> {
+  const withId: LedgerEntry = { ...entry, id: genId('LEDGER'), created_at: new Date().toISOString() };
+  await db.collection('ledger_entries').doc(withId.id).set(withId);
+  return withId;
+}
+
+export async function getLedgerEntries(outletId: string): Promise<LedgerEntry[]> {
+  const q = await db.collection('ledger_entries').where('outlet_id', '==', outletId).get();
+  return q.docs.map(d => d.data() as LedgerEntry).sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+export async function getOutletBalance(outletId: string): Promise<number> {
+  const entries = await getLedgerEntries(outletId);
+  return entries.reduce((sum, e) => sum + (e.type === 'charge' ? e.amount : -e.amount), 0);
+}
+
+/**
+ * Balances for every outlet under a distributor in one query, rather than
+ * one Firestore read per outlet — used to show a balance column across the
+ * whole outlets list without an N+1 fetch pattern.
+ */
+export async function getOutletBalancesByDistributor(distributorId: string): Promise<Record<string, number>> {
+  const q = await db.collection('ledger_entries').where('distributor_id', '==', distributorId).get();
+  const balances: Record<string, number> = {};
+  for (const doc of q.docs) {
+    const entry = doc.data() as LedgerEntry;
+    const delta = entry.type === 'charge' ? entry.amount : -entry.amount;
+    balances[entry.outlet_id] = (balances[entry.outlet_id] || 0) + delta;
+  }
+  return balances;
+}
+
 export async function addOrder(order: Order): Promise<Order> {
   const withId: Order = { ...order, id: order.id || genId('ORD') };
   await db.collection('orders').doc(withId.id).set(withId);
@@ -262,6 +306,7 @@ export async function resetDemoAccount(): Promise<void> {
     { name: 'products', field: 'distributor_id' },
     { name: 'orders', field: 'distributor_id' },
     { name: 'nudges', field: 'distributor_id' },
+    { name: 'ledger_entries', field: 'distributor_id' },
   ];
 
   for (const { name, field } of collections) {

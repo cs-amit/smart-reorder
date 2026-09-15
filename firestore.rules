@@ -167,14 +167,34 @@ service cloud.firestore {
     }
 
     // ============================================================================
-    // 7. Connection Testing Document
+    // 7. Credit Ledger — charges (per order) and payments recorded against an
+    // outlet's running balance. Only the owning distributor may write
+    // (record a payment or a charge); the linked retailer may only read
+    // their own outlet's entries, never write — matches how this actually
+    // works in practice (the distributor/salesman records what was
+    // collected, the retailer doesn't self-report).
+    // ============================================================================
+    match /ledger_entries/{entryId} {
+      allow write: if isAuthenticated() && (
+        (request.resource != null && request.resource.data.distributor_id == request.auth.uid) ||
+        (resource != null && resource.data.distributor_id == request.auth.uid)
+      );
+
+      allow read: if isAuthenticated() && (
+        resource.data.distributor_id == request.auth.uid ||
+        (hasRetailerProfile() && resource.data.outlet_id == getRetailerData().outlet_id)
+      );
+    }
+
+    // ============================================================================
+    // 8. Connection Testing Document
     // ============================================================================
     match /test/{testId} {
       allow read, write: if isAuthenticated();
     }
 
     // ============================================================================
-    // 8. Zero-Trust Default Deny
+    // 9. Zero-Trust Default Deny
     // ============================================================================
     match /{document=**} {
       allow read, write: if false;

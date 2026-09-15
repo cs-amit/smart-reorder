@@ -10,7 +10,7 @@ import {
 import { db, auth, generateInviteCode, isFirebaseConfigured, withTimeout } from './firebase';
 import { getStoredUser } from './authService';
 import { apiFetch } from './api';
-import { Distributor, Outlet, Product, Order, Retailer, NudgeRecord } from '../types';
+import { Distributor, Outlet, Product, Order, Retailer, NudgeRecord, LedgerEntry } from '../types';
 
 export interface BulkImportPayload {
   outlets?: Array<{ id: string; name: string; route: string; owner?: string; phone?: string }>;
@@ -873,6 +873,44 @@ export async function cancelOrderInDb(orderId: string, distributorId?: string): 
   if (!res.ok || !json.success) {
     throw new Error(json.message || `Failed to cancel order (Status ${res.status})`);
   }
+}
+
+/**
+ * Fetch an outlet's credit ledger — running balance, full entry history, and
+ * the last real (non-cancellation-reversal) payment date. Readable by the
+ * outlet's own distributor or its linked retailer.
+ */
+export async function fetchOutletLedger(
+  outletId: string,
+  distributorId?: string
+): Promise<{ balance: number; entries: LedgerEntry[]; last_payment_date: string | null }> {
+  const res = await apiFetch(`/api/outlets/${outletId}/ledger`, {}, distributorId);
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to load ledger (Status ${res.status})`);
+  }
+  return json.data;
+}
+
+/**
+ * Record a payment against an outlet's outstanding balance. Distributor-only
+ * — the retailer side is read-only, matching how collection actually works.
+ */
+export async function recordLedgerPayment(
+  outletId: string,
+  amount: number,
+  note?: string
+): Promise<{ entry: LedgerEntry; balance: number }> {
+  const res = await apiFetch(`/api/outlets/${outletId}/ledger/payment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, note }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to record payment (Status ${res.status})`);
+  }
+  return json.data;
 }
 
 /**

@@ -45,6 +45,8 @@ export interface Outlet {
   route: string;
   owner?: string;
   phone?: string;
+  /** Computed server-side from the credit ledger on GET /api/outlets — not a stored field. */
+  credit_balance?: number;
 }
 
 export type OrderSource = 'distributor' | 'retailer' | 'retailer_app' | 'ocr_import' | 'ocr_invoice';
@@ -90,6 +92,18 @@ export interface NudgeRecord {
   read_at?: string;
   suggested_quantity?: number;
   wholesale_price?: number;
+}
+
+export interface LedgerEntry {
+  id: string;
+  distributor_id: string;
+  outlet_id: string;
+  order_id?: string;
+  type: 'charge' | 'payment';
+  amount: number;
+  note?: string;
+  date: string; // YYYY-MM-DD
+  created_at: string;
 }
 
 export interface Retailer {

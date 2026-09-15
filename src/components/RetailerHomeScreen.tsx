@@ -35,6 +35,7 @@ import {
   MessageSquare,
   XCircle,
   Ban,
+  Wallet,
 } from 'lucide-react';
 import { UpiPaymentModal } from './UpiPaymentModal';
 import { WhatsAppNudgesList } from './WhatsAppNudgesList';
@@ -44,6 +45,7 @@ import {
   fetchNudgesFromDb,
   markNudgeReadInDb,
   cancelOrderInDb,
+  fetchOutletLedger,
 } from '../lib/firestoreService';
 import { BUTTON_STYLES, CARD_STYLE } from '../lib/theme';
 
@@ -177,6 +179,21 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
   useEffect(() => {
     loadNudges();
   }, [effectiveOutlet, asOfDate]);
+
+  // Credit ledger — read-only on the retailer side; only the distributor
+  // records payments (matches how collection actually works in practice).
+  const [creditBalance, setCreditBalance] = useState<number>(0);
+  const [lastPaymentDate, setLastPaymentDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!effectiveOutlet) return;
+    fetchOutletLedger(effectiveOutlet.id, distributor.id)
+      .then(data => {
+        setCreditBalance(data.balance);
+        setLastPaymentDate(data.last_payment_date);
+      })
+      .catch(err => console.warn('Failed to load ledger for outlet:', err));
+  }, [effectiveOutlet, distributor.id, orders]);
 
   // Confirm draft order from WhatsApp nudge. The payment step for a
   // nudge-originated order happens inline in the chat itself (see
@@ -1015,6 +1032,44 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
       {/* TAB 4: MY STORE */}
       {activeTab === 'account' && (
         <div className="space-y-5 animate-in fade-in duration-150">
+          {/* Credit Balance Card */}
+          <div
+            className={`${CARD_STYLE} p-5 sm:p-6 flex items-center justify-between ${
+              creditBalance > 0 ? 'border-[#FDE68A] bg-[#FFFBEB]' : ''
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  creditBalance > 0
+                    ? 'bg-[#FEF3C7] text-[#D97706]'
+                    : 'bg-[#F0FDFA] text-[#0F766E] border border-[#99F6E4]'
+                }`}
+              >
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs text-[#64748B] block">
+                  {creditBalance > 0 ? 'You owe your distributor' : 'Credit balance'}
+                </span>
+                <span
+                  className={`text-xl font-extrabold font-mono ${
+                    creditBalance > 0 ? 'text-[#D97706]' : 'text-[#16A34A]'
+                  }`}
+                >
+                  ₹{Math.abs(creditBalance).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+            <span className="text-xs text-[#64748B] text-right">
+              {creditBalance <= 0
+                ? 'Settled up'
+                : lastPaymentDate
+                ? `Last payment: ${lastPaymentDate}`
+                : 'No payments recorded yet'}
+            </span>
+          </div>
+
           {/* Main Identity Card */}
           <div className={`${CARD_STYLE} p-6 sm:p-8 space-y-5`}>
             <div className="flex items-center space-x-3 border-b border-[#E2E8F0] pb-4">

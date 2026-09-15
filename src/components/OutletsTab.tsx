@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Outlet, Product, PredictionResult, ConfidenceTier } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Outlet, Product, PredictionResult, ConfidenceTier, LedgerEntry } from '../types';
 import { ConfirmOrderModal } from './ConfirmOrderModal';
 import {
   Store,
@@ -18,9 +18,13 @@ import {
   Sparkles,
   Layers,
   Camera,
+  Wallet,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 import { BUTTON_STYLES, CARD_STYLE } from '../lib/theme';
 import { apiFetch } from '../lib/api';
+import { fetchOutletLedger, recordLedgerPayment } from '../lib/firestoreService';
 
 interface OutletsTabProps {
   outlets: Outlet[];
@@ -50,6 +54,15 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
   const [nudgedKeys, setNudgedKeys] = useState<Record<string, string>>({});
   const [nudgeInProgress, setNudgeInProgress] = useState<string | null>(null);
 
+  // Credit ledger state for the selected outlet
+  const [ledgerBalance, setLedgerBalance] = useState<number>(0);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [lastPaymentDate, setLastPaymentDate] = useState<string | null>(null);
+  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+
   // Filter outlets by search query
   const filteredOutlets = useMemo(() => {
     return outlets.filter(o => {
@@ -68,6 +81,50 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
     if (!selectedOutletId) return null;
     return outlets.find(o => o.id === selectedOutletId) || null;
   }, [outlets, selectedOutletId]);
+
+  const loadLedger = async (outletId: string) => {
+    setIsLoadingLedger(true);
+    setLedgerError(null);
+    try {
+      const data = await fetchOutletLedger(outletId);
+      setLedgerBalance(data.balance);
+      setLedgerEntries(data.entries);
+      setLastPaymentDate(data.last_payment_date);
+    } catch (err: any) {
+      console.error('Failed to load ledger:', err);
+      setLedgerError(err?.message || 'Failed to load credit ledger.');
+    } finally {
+      setIsLoadingLedger(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedOutletId) {
+      loadLedger(selectedOutletId);
+      setPaymentAmount('');
+    }
+  }, [selectedOutletId]);
+
+  const handleRecordPayment = async () => {
+    if (!selectedOutletId) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setLedgerError('Enter a valid payment amount greater than 0.');
+      return;
+    }
+    setIsRecordingPayment(true);
+    setLedgerError(null);
+    try {
+      await recordLedgerPayment(selectedOutletId, amount);
+      setPaymentAmount('');
+      await loadLedger(selectedOutletId);
+    } catch (err: any) {
+      console.error('Failed to record payment:', err);
+      setLedgerError(err?.message || 'Failed to record payment.');
+    } finally {
+      setIsRecordingPayment(false);
+    }
+  };
 
   // Predictions for every product that this outlet has ordered
   const outletProductPredictions = useMemo(() => {
@@ -134,6 +191,12 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
       throw new Error(json.message || 'Failed to record order');
     }
     await onRefreshData();
+    // Placing an order adds a credit charge — refresh the ledger for
+    // whichever outlet's detail view is currently open so the new balance
+    // shows immediately, not just after leaving and re-entering.
+    if (selectedOutletId) {
+      loadLedger(selectedOutletId);
+    }
   };
 
   const getConfidenceBadge = (tier: ConfidenceTier) => {
@@ -265,6 +328,105 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Credit Ledger Card */}
+        <div className={`${CARD_STYLE} p-5`}>
+          <div className="flex items-center space-x-2 mb-4">
+            <Wallet className="w-4 h-4 text-[#0F766E]" />
+            <h2 className="text-sm font-bold text-[#0F172A]">Credit Ledger</h2>
+          </div>
+
+          {isLoadingLedger ? (
+            <div className="py-6 text-center text-xs text-[#64748B] flex items-center justify-center space-x-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#0F766E]" />
+              <span>Loading balance...</span>
+            </div>
+          ) : (
+            <>
+              {ledgerError && (
+                <div className="mb-3 p-2.5 bg-[#FEE2E2] border border-[#FECACA] rounded-lg text-[11px] text-[#DC2626]">
+                  {ledgerError}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0]">
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B] block">
+                    Outstanding Balance
+                  </span>
+                  <span
+                    className={`text-2xl font-extrabold font-mono ${
+                      ledgerBalance > 0 ? 'text-[#DC2626]' : 'text-[#16A34A]'
+                    }`}
+                  >
+                    ₹{Math.abs(ledgerBalance).toLocaleString('en-IN')}
+                  </span>
+                  {ledgerBalance <= 0 && (
+                    <span className="ml-2 text-xs font-semibold text-[#16A34A]">Settled up</span>
+                  )}
+                  <p className="text-[11px] text-[#64748B] mt-0.5">
+                    {lastPaymentDate ? `Last payment: ${lastPaymentDate}` : 'No payments recorded yet'}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#64748B] text-xs font-bold">
+                      ₹
+                    </span>
+                    <input
+                      id="record-payment-amount-input"
+                      type="number"
+                      min="0"
+                      placeholder="Amount"
+                      value={paymentAmount}
+                      onChange={e => setPaymentAmount(e.target.value)}
+                      className="w-28 pl-6 pr-2 py-2 border border-[#E2E8F0] rounded-lg text-xs bg-[#F8FAFC] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0F766E] focus:border-transparent"
+                    />
+                  </div>
+                  <button
+                    id="record-payment-btn"
+                    type="button"
+                    disabled={isRecordingPayment}
+                    onClick={handleRecordPayment}
+                    className={`${BUTTON_STYLES.primary} text-xs py-2 px-3 whitespace-nowrap`}
+                  >
+                    {isRecordingPayment ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    <span>Record Payment</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Transaction history */}
+              {ledgerEntries.length > 0 && (
+                <div className="mt-3 max-h-48 overflow-y-auto space-y-1.5">
+                  {[...ledgerEntries].reverse().map(entry => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-[#F8FAFC]"
+                    >
+                      <span className="text-[#64748B]">
+                        {entry.date}
+                        {entry.note && <span className="text-[#94A3B8]"> · {entry.note}</span>}
+                      </span>
+                      <span
+                        className={`font-mono font-semibold ${
+                          entry.type === 'charge' ? 'text-[#DC2626]' : 'text-[#16A34A]'
+                        }`}
+                      >
+                        {entry.type === 'charge' ? '+' : '−'}₹{entry.amount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Products Monitored for this Outlet */}
@@ -588,7 +750,7 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
 
                 {/* Bottom Stats & CTA */}
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-semibold text-[#0F172A]">
                       {stats.totalProducts} product{stats.totalProducts !== 1 ? 's' : ''}
                     </span>
@@ -599,6 +761,12 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
                     ) : (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#DCFCE7] text-[#16A34A]">
                         Nothing due
+                      </span>
+                    )}
+                    {!!outlet.credit_balance && outlet.credit_balance > 0 && (
+                      <span className="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
+                        <Wallet className="w-2.5 h-2.5" />
+                        <span>₹{outlet.credit_balance.toLocaleString('en-IN')} owed</span>
                       </span>
                     )}
                   </div>

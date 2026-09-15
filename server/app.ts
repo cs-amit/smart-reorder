@@ -370,10 +370,12 @@ export function createApiApp(): express.Express {
 
   app.get('/api/outlets', requireAuth, async (req: AuthedRequest, res) => {
     const distributorId = await resolveDistributorId(req.uid!, getPreviewUid(req));
-    const [data, asOfDate] = await Promise.all([
+    const [outlets, asOfDate, balances] = await Promise.all([
       distributorId ? store.getOutlets(distributorId) : Promise.resolve([]),
       resolveAsOfDate(distributorId),
+      distributorId ? store.getOutletBalancesByDistributor(distributorId) : Promise.resolve({}),
     ]);
+    const data = outlets.map(o => ({ ...o, credit_balance: balances[o.id] || 0 }));
     res.json({ success: true, as_of_date: asOfDate, data });
   });
 
@@ -704,6 +706,24 @@ export function createApiApp(): express.Express {
       const updatedPrediction = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id) || null;
       await syncNudgesForDistributor(distributorId, asOfDate);
 
+      // Every order places goods on credit with the outlet — this is how
+      // Indian kirana-distributor trade actually works, and is intentionally
+      // independent of the simulated UPI/WhatsApp-pay screens (those cover a
+      // single order's payment moment; the ledger tracks the ongoing
+      // goods-supplied-vs-cash-collected relationship).
+      const orderedProduct = products.find(p => p.id === product_id);
+      const chargeAmount = saved.quantity * (orderedProduct?.wholesale_price || 0);
+      if (chargeAmount > 0) {
+        await store.addLedgerEntry({
+          distributor_id: distributorId,
+          outlet_id,
+          order_id: saved.id,
+          type: 'charge',
+          amount: chargeAmount,
+          date: saved.date,
+        });
+      }
+
       res.status(201).json({
         success: true,
         message: 'Order recorded and prediction recomputed successfully',
@@ -913,10 +933,96 @@ export function createApiApp(): express.Express {
         return;
       }
       await store.cancelOrder(order.id);
+
+      // Reverse the credit charge this order created, if any — cancelling
+      // goods that were never actually delivered shouldn't leave the outlet
+      // owing for them. Reverses the exact amount originally charged rather
+      // than recomputing from today's product price.
+      const outletLedger = await store.getLedgerEntries(order.outlet_id);
+      const originalCharge = outletLedger.find(e => e.order_id === order.id && e.type === 'charge');
+      if (originalCharge) {
+        await store.addLedgerEntry({
+          distributor_id: distributorId,
+          outlet_id: order.outlet_id,
+          order_id: order.id,
+          type: 'payment',
+          amount: originalCharge.amount,
+          note: 'Reversed: order cancelled',
+          date: await resolveAsOfDate(distributorId),
+        });
+      }
+
       res.json({ success: true, message: 'Order cancelled.', data: { ...order, status: 'cancelled' } });
     } catch (err: any) {
       console.error('Cancel order error:', err);
       res.status(500).json({ success: false, message: err?.message || 'Failed to cancel order.' });
+    }
+  });
+
+  // Credit ledger: the distributor who owns the outlet, or the retailer
+  // linked to it, may view the balance and history; only the distributor
+  // may record a payment (matches how it actually works — the salesman/
+  // distributor collects and records receipt, the retailer doesn't
+  // self-report what they paid).
+  app.get('/api/outlets/:id/ledger', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const outlet = await store.getOutletById(req.params.id);
+      if (!outlet) {
+        res.status(404).json({ success: false, message: 'Outlet not found.' });
+        return;
+      }
+      const retailer = await store.getRetailer(req.uid!);
+      const isOwningDistributor = outlet.distributor_id === req.uid;
+      const isLinkedRetailer = !!retailer && retailer.outlet_id === outlet.id;
+      if (!isOwningDistributor && !isLinkedRetailer) {
+        res.status(403).json({ success: false, message: 'Not authorized to view this ledger.' });
+        return;
+      }
+      const entries = await store.getLedgerEntries(outlet.id);
+      const balance = entries.reduce((sum, e) => sum + (e.type === 'charge' ? e.amount : -e.amount), 0);
+      const lastPayment = [...entries].reverse().find(e => e.type === 'payment' && e.note !== 'Reversed: order cancelled');
+      res.json({
+        success: true,
+        data: { balance, entries, last_payment_date: lastPayment?.date || null },
+      });
+    } catch (err: any) {
+      console.error('Get ledger error:', err);
+      res.status(500).json({ success: false, message: err?.message || 'Failed to load ledger.' });
+    }
+  });
+
+  app.post('/api/outlets/:id/ledger/payment', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const outlet = await store.getOutletById(req.params.id);
+      if (!outlet) {
+        res.status(404).json({ success: false, message: 'Outlet not found.' });
+        return;
+      }
+      if (outlet.distributor_id !== req.uid) {
+        res.status(403).json({ success: false, message: 'Only the outlet\'s own distributor can record a payment.' });
+        return;
+      }
+      const { amount, note } = req.body || {};
+      const numericAmount = Number(amount);
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        res.status(400).json({ success: false, message: 'Payment amount must be a positive number.' });
+        return;
+      }
+      const asOfDate = await resolveAsOfDate(outlet.distributor_id);
+      const entry = await store.addLedgerEntry({
+        distributor_id: outlet.distributor_id,
+        outlet_id: outlet.id,
+        type: 'payment',
+        amount: numericAmount,
+        note: note ? String(note).trim().slice(0, 200) : undefined,
+        date: asOfDate,
+      });
+      const entries = await store.getLedgerEntries(outlet.id);
+      const balance = entries.reduce((sum, e) => sum + (e.type === 'charge' ? e.amount : -e.amount), 0);
+      res.status(201).json({ success: true, message: 'Payment recorded.', data: { entry, balance } });
+    } catch (err: any) {
+      console.error('Record payment error:', err);
+      res.status(500).json({ success: false, message: err?.message || 'Failed to record payment.' });
     }
   });
 
