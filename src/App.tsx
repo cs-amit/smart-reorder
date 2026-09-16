@@ -456,6 +456,8 @@ export default function App() {
           initialProductId={targetProductId}
           onOrderPlaced={fetchData}
           onOutletResolved={setRetailerOutlet}
+          activeTab={retailerTab}
+          onActiveTabChange={setRetailerTab}
           previewAsUid={
             currentUser.role === 'distributor' && (currentUser.is_demo || distributor?.is_demo)
               ? DEMO_RETAILER_UID

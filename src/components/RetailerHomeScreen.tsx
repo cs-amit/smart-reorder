@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { UpiPaymentModal } from './UpiPaymentModal';
 import { WhatsAppNudgesList } from './WhatsAppNudgesList';
+import { RetailerTabKey } from './AppShell';
 import {
   placeRetailerOrder,
   cleanPhone,
@@ -61,6 +62,10 @@ interface RetailerHomeScreenProps {
   wasMatched?: boolean;
   onDisconnect: () => void;
   onOrderPlaced?: () => void;
+  // Controlled by the persistent header nav (AppShell) so its tabs actually
+  // drive this content instead of just toggling their own highlight.
+  activeTab?: RetailerTabKey;
+  onActiveTabChange?: (tab: RetailerTabKey) => void;
 }
 
 export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
@@ -75,8 +80,43 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
   wasMatched,
   onDisconnect,
   onOrderPlaced,
+  activeTab: outerTab,
+  onActiveTabChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'due' | 'messages' | 'history' | 'account'>('due');
+  const [activeTab, setActiveTabInternal] = useState<'due' | 'messages' | 'history' | 'account'>('due');
+  // Toggle to show upcoming catalog items
+  const [showUpcoming, setShowUpcoming] = useState<boolean>(false);
+
+  // Header nav (outer) has 4 tabs that don't map 1:1 onto this screen's own
+  // 4 sections — 'catalog_browse' has no dedicated section of its own, it's
+  // the same "due" section with the upcoming-products list force-expanded,
+  // and 'messages' has no header-nav equivalent at all (only reachable via
+  // the pill row below). Selecting a section always updates both states so
+  // the header stays in sync with whichever pill was actually clicked.
+  const selectTab = (tab: 'due' | 'messages' | 'history' | 'account') => {
+    setActiveTabInternal(tab);
+    if (tab === 'due') onActiveTabChange?.('restock');
+    else if (tab === 'history') onActiveTabChange?.('history');
+    else if (tab === 'account') onActiveTabChange?.('distributor_info');
+  };
+
+  useEffect(() => {
+    if (outerTab === 'restock') {
+      setActiveTabInternal('due');
+      setShowUpcoming(false);
+    } else if (outerTab === 'catalog_browse') {
+      setActiveTabInternal('due');
+      setShowUpcoming(true);
+    } else if (outerTab === 'history') {
+      setActiveTabInternal('history');
+    } else if (outerTab === 'distributor_info') {
+      setActiveTabInternal('account');
+    }
+    // Only react to the header nav actually changing — this must not
+    // override a same-tick internal selection (e.g. the Messages pill,
+    // which has no outer-tab equivalent to react to).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outerTab]);
 
   // Find effective linked outlet
   const effectiveOutlet = useMemo(() => {
@@ -303,9 +343,6 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
   const [historySearch, setHistorySearch] = useState<string>('');
   const [historyFilter, setHistoryFilter] = useState<'all' | 'retailer'>('all');
 
-  // Toggle to show upcoming catalog items
-  const [showUpcoming, setShowUpcoming] = useState<boolean>(false);
-
   // Initialize draft quantities whenever predictions or orders change
   useEffect(() => {
     setDraftQuantities(prev => {
@@ -501,7 +538,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           <button
             id="tab-due-products-btn"
             type="button"
-            onClick={() => setActiveTab('due')}
+            onClick={() => selectTab('due')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
               activeTab === 'due'
                 ? 'bg-[#0F766E] text-white shadow-xs'
@@ -526,7 +563,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           <button
             id="tab-messages-btn"
             type="button"
-            onClick={() => setActiveTab('messages')}
+            onClick={() => selectTab('messages')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
               activeTab === 'messages'
                 ? 'bg-[#0F766E] text-white shadow-xs'
@@ -553,7 +590,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           <button
             id="tab-order-history-btn"
             type="button"
-            onClick={() => setActiveTab('history')}
+            onClick={() => selectTab('history')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
               activeTab === 'history'
                 ? 'bg-[#0F766E] text-white shadow-xs'
@@ -576,7 +613,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
           <button
             id="tab-account-details-btn"
             type="button"
-            onClick={() => setActiveTab('account')}
+            onClick={() => selectTab('account')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
               activeTab === 'account'
                 ? 'bg-[#0F766E] text-white shadow-xs'
@@ -1200,7 +1237,7 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
         outlet={effectiveOutlet}
         distributor={distributor}
         totalAmount={activeUpiTotal}
-        onViewHistory={() => setActiveTab('history')}
+        onViewHistory={() => selectTab('history')}
       />
     </div>
   );

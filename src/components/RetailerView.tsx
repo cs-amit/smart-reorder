@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { RetailerJoinScreen } from './RetailerJoinScreen';
 import { RetailerHomeScreen } from './RetailerHomeScreen';
+import { RetailerTabKey } from './AppShell';
 import {
   ensureRetailerUserUid,
   fetchRetailerProfile,
@@ -33,6 +34,12 @@ interface RetailerViewProps {
   // Reports the actual outlet linked to the signed-in retailer up to the parent,
   // so shared chrome (like the header) shows the right store instead of guessing.
   onOutletResolved?: (outlet: Outlet | null) => void;
+  // Drives which section the persistent header nav shows — lifted up to
+  // AppShell so the header tabs (Restock Needed / All Products / Order
+  // History / My Distributor) actually control the content instead of just
+  // toggling their own highlight.
+  activeTab?: RetailerTabKey;
+  onActiveTabChange?: (tab: RetailerTabKey) => void;
 }
 
 export const RetailerView: React.FC<RetailerViewProps> = ({
@@ -47,6 +54,8 @@ export const RetailerView: React.FC<RetailerViewProps> = ({
   onOrderPlaced,
   previewAsUid,
   onOutletResolved,
+  activeTab,
+  onActiveTabChange,
 }) => {
   const [retailerUid, setRetailerUid] = useState<string>('');
   const [retailer, setRetailer] = useState<Retailer | null>(null);
@@ -141,6 +150,8 @@ export const RetailerView: React.FC<RetailerViewProps> = ({
         wasMatched={wasMatched}
         onDisconnect={handleDisconnect}
         onOrderPlaced={onOrderPlaced}
+        activeTab={activeTab}
+        onActiveTabChange={onActiveTabChange}
       />
     );
   }
