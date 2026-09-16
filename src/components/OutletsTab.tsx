@@ -132,6 +132,17 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
     return predictions.filter(p => p.outlet_id === selectedOutletId);
   }, [predictions, selectedOutletId]);
 
+  // Earliest predicted_next_date across this outlet's products — not just
+  // whichever prediction happens to be first in array order, and never a
+  // same-as-today fallback when there's no order history to predict from.
+  const nextDueDateForOutlet = useMemo(() => {
+    if (outletProductPredictions.length === 0) return null;
+    return outletProductPredictions.reduce(
+      (earliest, p) => (p.predicted_next_date < earliest ? p.predicted_next_date : earliest),
+      outletProductPredictions[0].predicted_next_date
+    );
+  }, [outletProductPredictions]);
+
   // Summary counts per outlet
   const outletProductCounts = useMemo(() => {
     const map = new Map<
@@ -323,7 +334,7 @@ export const OutletsTab: React.FC<OutletsTabProps> = ({
               <div className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-center">
                 <span className="block text-[#64748B] text-[11px]">Next Due Date</span>
                 <span className="font-bold text-[#0F766E] font-mono text-xs mt-0.5 block">
-                  {outletProductPredictions[0]?.predicted_next_date || asOfDate}
+                  {nextDueDateForOutlet || 'No orders yet'}
                 </span>
               </div>
             </div>
