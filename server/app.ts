@@ -681,6 +681,24 @@ export function createApiApp(): express.Express {
         return;
       }
 
+      // Reject orders against an outlet or product that doesn't exist (or
+      // belongs to a different distributor) rather than silently writing an
+      // orphaned order record — this can't happen via the normal UI (which
+      // only offers real outlet/product IDs) but a stale client reference
+      // or a bad request shouldn't be able to corrupt the order history.
+      const [outlets, products] = await Promise.all([
+        store.getOutlets(distributorId),
+        store.getProducts(distributorId),
+      ]);
+      if (!outlets.some(o => o.id === outlet_id)) {
+        res.status(404).json({ success: false, message: 'Outlet not found.' });
+        return;
+      }
+      if (!products.some(p => p.id === product_id)) {
+        res.status(404).json({ success: false, message: 'Product not found.' });
+        return;
+      }
+
       const asOfDate = await resolveAsOfDate(distributorId);
       const finalPlacedBy = placed_by || (source === 'retailer' ? 'retailer' : 'distributor');
       const finalSource = source || (finalPlacedBy === 'retailer' ? 'retailer' : 'distributor');
@@ -697,11 +715,7 @@ export function createApiApp(): express.Express {
       };
       const saved = await store.addOrder(newOrder);
 
-      const [outlets, products, orders] = await Promise.all([
-        store.getOutlets(distributorId),
-        store.getProducts(distributorId),
-        getActiveOrders(distributorId),
-      ]);
+      const orders = await getActiveOrders(distributorId);
       const predictions = computePredictions(asOfDate, outlets, products, orders);
       const updatedPrediction = predictions.find(p => p.outlet_id === outlet_id && p.product_id === product_id) || null;
       await syncNudgesForDistributor(distributorId, asOfDate);
@@ -799,6 +813,11 @@ export function createApiApp(): express.Express {
         if (!line.outlet_id || !line.product_id || !line.quantity) continue;
         const outlet = outlets.find(o => o.id === line.outlet_id);
         const product = products.find(p => p.id === line.product_id);
+        // The UI only lets the user confirm lines it already matched to a
+        // real outlet/product, but don't trust that gate alone — skip
+        // anything that doesn't actually resolve rather than writing an
+        // orphaned order record.
+        if (!outlet || !product) continue;
         toCreate.push({
           id: '',
           distributor_id: distributorId,
