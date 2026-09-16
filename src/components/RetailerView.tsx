@@ -12,7 +12,7 @@ import { RetailerHomeScreen } from './RetailerHomeScreen';
 import {
   ensureRetailerUserUid,
   fetchRetailerProfile,
-  clearRetailerSession,
+  unlinkRetailerDistributor,
   JoinDistributorResult,
 } from '../lib/firestoreService';
 import { Loader2 } from 'lucide-react';
@@ -104,13 +104,17 @@ export const RetailerView: React.FC<RetailerViewProps> = ({
   };
 
   const handleDisconnect = () => {
-    if (retailerUid) {
-      clearRetailerSession(retailerUid);
-    }
+    // Update UI immediately; the unlink call runs in the background so a
+    // slow/failed request doesn't leave the button looking unresponsive.
     setRetailer(prev => (prev ? { ...prev, linked_distributor_id: undefined, outlet_id: undefined } : null));
     setLinkedDistributor(null);
     setLinkedOutlet(null);
     setWasMatched(false);
+    if (retailerUid) {
+      unlinkRetailerDistributor(retailerUid).catch(err => {
+        console.warn('Failed to unlink retailer server-side:', err);
+      });
+    }
   };
 
   if (isLoading) {

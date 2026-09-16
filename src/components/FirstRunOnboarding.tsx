@@ -99,7 +99,11 @@ export const FirstRunOnboarding: React.FC<FirstRunOnboardingProps> = ({
     try {
       const newOutlet: Partial<Outlet> = {
         name: outletName.trim(),
-        owner: outletOwner.trim() || outletName.trim(),
+        // Leave genuinely unset rather than falling back to the store's own
+        // name — "Owner: Test Kirana Store" for a store called "Test Kirana
+        // Store" reads as real (and wrong) data, not an empty field. Every
+        // outlet card already renders the owner line conditionally.
+        owner: outletOwner.trim() || undefined,
         phone: outletPhone.trim(),
         route: outletRoute.trim() || route,
       };

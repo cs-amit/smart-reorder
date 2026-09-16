@@ -880,6 +880,16 @@ export function createApiApp(): express.Express {
     }
   });
 
+  app.post('/api/retailers/unlink', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      await store.unlinkRetailer(req.uid!);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Retailer unlink error:', err);
+      res.status(500).json({ success: false, message: err?.message || 'Failed to unlink distributor.' });
+    }
+  });
+
   app.get('/api/retailers/:uid', requireAuth, async (req: AuthedRequest, res) => {
     const { uid } = req.params;
     const retailer = await store.getRetailer(uid);

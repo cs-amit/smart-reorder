@@ -246,6 +246,13 @@ export async function saveRetailer(retailer: Retailer): Promise<void> {
   await db.collection('retailers').doc(retailer.uid).set(retailer, { merge: true });
 }
 
+export async function unlinkRetailer(uid: string): Promise<void> {
+  await db.collection('retailers').doc(uid).set(
+    { linked_distributor_id: FieldValue.delete(), outlet_id: FieldValue.delete() },
+    { merge: true }
+  );
+}
+
 export async function findRetailerByPhone(phone: string): Promise<Retailer | null> {
   const target = cleanPhone(phone);
   if (!target) return null;

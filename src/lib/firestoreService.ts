@@ -714,6 +714,18 @@ export function clearRetailerSession(uid?: string): void {
 }
 
 /**
+ * Unlink a retailer from their distributor server-side, then clear the local
+ * cache. Clearing localStorage alone isn't enough — fetchRetailerProfile
+ * falls back to GET /api/retailers/:uid, which reads the real Firestore doc,
+ * so without this the retailer silently reconnects to the old distributor on
+ * their next reload.
+ */
+export async function unlinkRetailerDistributor(uid: string): Promise<void> {
+  await apiFetch('/api/retailers/unlink', { method: 'POST' }, uid);
+  clearRetailerSession(uid);
+}
+
+/**
  * Place a retailer order (from Retailer Portal)
  */
 export async function placeRetailerOrder(params: {
