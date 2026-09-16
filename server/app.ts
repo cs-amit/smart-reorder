@@ -54,6 +54,19 @@ function getPreviewUid(req: express.Request): string | undefined {
   return typeof raw === 'string' ? raw : undefined;
 }
 
+// The uid whose retailer profile a request should act as — the caller's own
+// uid, unless the demo distributor is previewing the demo retailer's view,
+// in which case it's the demo retailer's uid. Only ever trusts preview_uid
+// for that one specific, hardcoded demo pairing — never a client-claimed
+// identity in general, same guard as resolveDistributorId above.
+function resolveEffectiveRetailerUid(req: AuthedRequest): string {
+  const previewUid = getPreviewUid(req);
+  if (previewUid === store.DEMO_RETAILER_ID && req.uid === store.DEMO_DIST_ID) {
+    return store.DEMO_RETAILER_ID;
+  }
+  return req.uid!;
+}
+
 // ============================================================================
 // As-of-date (demo convenience for shifting "today") — scoped per distributor
 // (stored on their own distributor doc), never a single shared value. If it
@@ -950,9 +963,15 @@ export function createApiApp(): express.Express {
         res.status(404).json({ success: false, message: 'Order not found.' });
         return;
       }
-      const retailer = await store.getRetailer(req.uid!);
+      const retailer = await store.getRetailer(resolveEffectiveRetailerUid(req));
       const isOwnOutletOrder = !!retailer && !!retailer.outlet_id && retailer.outlet_id === order.outlet_id;
-      const isDistributorPlaced = order.placed_by === 'distributor';
+      // Match the same placed_by fallback the order-list endpoint uses for
+      // display (GET /api/orders) — without this, every seed/legacy order
+      // (none of which have placed_by set) shows a "Cancel Order" button
+      // that looks enabled but always gets rejected here, since this reads
+      // the raw stored document rather than the list endpoint's enriched view.
+      const effectivePlacedBy = order.placed_by || (order.source === 'retailer' ? 'retailer' : (order.source || 'distributor'));
+      const isDistributorPlaced = effectivePlacedBy === 'distributor';
       if (!retailer || !isOwnOutletOrder || !isDistributorPlaced) {
         res.status(403).json({ success: false, message: 'This order cannot be cancelled from your account.' });
         return;

@@ -426,7 +426,11 @@ export const RetailerHomeScreen: React.FC<RetailerHomeScreenProps> = ({
     setIsCancelling(prev => ({ ...prev, [orderId]: true }));
     setOrderError(null);
     try {
-      await cancelOrderInDb(orderId, distributor.id);
+      // Pass the retailer's own uid, not the distributor's — the server
+      // needs to look up *this* retailer's profile to check ownership, and
+      // when the demo distributor is previewing the retailer view, req.uid
+      // is the distributor's own uid, not this retailer's.
+      await cancelOrderInDb(orderId, retailer.uid);
       if (onOrderPlaced) {
         onOrderPlaced();
       }
